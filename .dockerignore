@@ -1,0 +1,47 @@
+# Dependencias (se instalan dentro del contenedor)
+node_modules/
+
+# Build previo (se genera dentro del contenedor)
+dist/
+
+# Artefactos de Astro
+.astro/
+
+# Tests (no van a producción)
+tests/
+playwright-report/
+test-results/
+coverage/
+
+# Herramientas de desarrollo
+.vite/
+
+# Archivos de entorno (secretos)
+.env
+.env.local
+.env.*.local
+
+# Control de versiones
+.git/
+.gitignore
+
+# Documentación (no necesaria en la imagen)
+docs/
+*.md
+LICENSE
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI
+.github/
+
+# Claude
+.claude/

@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #fff8e7;
+  --color-surface: #ffffff;
+  --color-ink: #000000;
+  --color-ink-muted: rgba(0, 0, 0, 0.6);
+  --color-accent-pink: #ffb5c5;
+  --color-accent-lime: #c6f5a6;
+  --color-accent-lavender: #c5b4ff;
+  --color-accent-peach: #ffcda8;
+  --color-danger: #ff6b6b;
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --text-hero: 3.5rem;
+  --text-h1: 2rem;
+  --text-h2: 1.5rem;
+  --text-body: 1rem;
+  --text-small: 0.875rem;
+  --text-tiny: 0.75rem;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+:root {
+  --bg: #fff8e7;
+  --surface: #ffffff;
+  --ink: #000000;
+  --ink-muted: rgba(0, 0, 0, 0.6);
+  --accent-pink: #ffb5c5;
+  --accent-lime: #c6f5a6;
+  --accent-lavender: #c5b4ff;
+  --accent-peach: #ffcda8;
+  --danger: #ff6b6b;
+
+  --border-thin: 2px solid var(--ink);
+  --border-thick: 3px solid var(--ink);
+
+  --shadow-default: 4px 4px 0 #000;
+  --shadow-hover: 2px 2px 0 #000;
+  --shadow-active: 0 0 0 #000;
+  --shadow-large: 6px 6px 0 #000;
+
+  --motion-hover: 80ms ease-out;
+  --motion-active: 50ms ease-out;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+}
+
+html {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.brut-card {
+  background: var(--surface);
+  border: var(--border-thick);
+  box-shadow: var(--shadow-default);
+  border-radius: var(--radius-lg);
+}
+
+.brut-input {
+  background: var(--surface);
+  border: var(--border-thin);
+  box-shadow: var(--shadow-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.brut-input:focus {
+  background: color-mix(in srgb, var(--accent-peach) 30%, var(--surface));
+}
+
+.brut-btn {
+  background: var(--surface);
+  border: var(--border-thin);
+  box-shadow: var(--shadow-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  color: var(--ink);
+  transition: transform var(--motion-hover), box-shadow var(--motion-hover);
+}
+
+.brut-btn:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.brut-btn:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: var(--shadow-active);
+}
+
+.brut-btn[aria-pressed="true"],
+.brut-btn[data-active="true"] {
+  background: var(--accent-lavender);
+}
+
+.brut-btn-primary {
+  background: var(--accent-lime);
+  border: var(--border-thick);
+  box-shadow: var(--shadow-large);
+  padding: var(--space-4) var(--space-6);
+  font-family: var(--font-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+  transition: transform var(--motion-hover), box-shadow var(--motion-hover);
+}
+
+.brut-btn-primary:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: var(--shadow-default);
+}
+
+.brut-btn-primary:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: var(--shadow-active);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brut-btn,
+  .brut-btn-primary {
+    transition: none;
+  }
+  .brut-btn:hover:not(:disabled),
+  .brut-btn:active:not(:disabled),
+  .brut-btn-primary:hover:not(:disabled),
+  .brut-btn-primary:active:not(:disabled) {
+    transform: none;
+  }
+}

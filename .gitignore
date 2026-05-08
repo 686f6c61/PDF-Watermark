@@ -1,0 +1,43 @@
+# Build artefactos
+dist/
+.astro/
+node_modules/
+
+# Tests
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Variables locales
+.env
+.env.local
+.env.*.local
+
+# Astro
+.astro/
+
+# Cache de Vite
+.vite/
+
+# Alfred Dev (no compartir memoria interna ni estado de sesion)
+.claude/
+
+# Documentacion interna (PRDs, ADRs, threat models, etc.)
+docs/

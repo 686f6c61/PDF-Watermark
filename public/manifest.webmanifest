@@ -1,0 +1,33 @@
+{
+  "name": "PDF Watermark — Marcas de agua 100 % en tu navegador",
+  "short_name": "PDF Watermark",
+  "description": "Aplica marcas de agua personalizables a PDFs e imágenes. Procesamiento 100 % local, tus archivos no se suben a ningún servidor.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFF8E7",
+  "theme_color": "#FFF8E7",
+  "lang": "es-ES",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"]
+}

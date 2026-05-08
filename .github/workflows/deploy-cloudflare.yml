@@ -1,0 +1,45 @@
+name: Despliegue a Cloudflare Pages
+
+# Workflow opcional. Se ejecuta solo manualmente desde la pestana Actions.
+# El despliegue principal va por otra plataforma (Coolify u otro), por eso
+# no se dispara en cada push. Si decides usar Cloudflare Pages, configura
+# los secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID y la variable
+# CLOUDFLARE_PROJECT_NAME, luego lanza el workflow desde la UI.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build y despliegue
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Build de producción
+        run: npm run build
+
+      # Action oficial de Cloudflare Pages.
+      # Secrets necesarios (configurar en Settings > Secrets and variables > Actions del repositorio):
+      #   CLOUDFLARE_API_TOKEN  — token con permiso "Cloudflare Pages: Edit"
+      #   CLOUDFLARE_ACCOUNT_ID — ID de la cuenta Cloudflare (visible en el dashboard)
+      # Variable de repositorio (no secret) necesaria:
+      #   CLOUDFLARE_PROJECT_NAME — nombre del proyecto en Cloudflare Pages
+      - name: Publicar en Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }}
