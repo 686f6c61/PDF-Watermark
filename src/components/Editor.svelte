@@ -38,8 +38,32 @@
   }
 
   async function applyAndDownload() {
-    await editor.runBatch();
+    if (editor.batchState.enabled && editor.batchState.names.length > 0) {
+      await editor.runWatermarkBatchPersonalized();
+    } else {
+      await editor.runBatch();
+    }
   }
+
+  // Texto del boton inferior: en modo lote indicamos el N×M esperado para
+  // que el usuario sepa cuantos archivos va a generar antes de pulsar.
+  const totalBatchFiles = $derived(
+    editor.batchState.enabled ? editor.batchState.names.length * editor.files.length : 0,
+  );
+
+  const downloadButtonText = $derived(
+    editor.batchState.enabled && editor.batchState.names.length > 0 && editor.files.length > 0
+      ? t("actions.generateBatch", lang).replace("{count}", totalBatchFiles.toString())
+      : t("actions.applyDownload", lang),
+  );
+
+  // canDownload del store solo valida texto/imagen; en modo lote la
+  // condicion es: hay nombres validos y al menos un archivo.
+  const canApply = $derived(
+    editor.batchState.enabled
+      ? editor.batchState.names.length > 0 && editor.files.length > 0 && !editor.isProcessing
+      : editor.canDownload,
+  );
 
   const empty = $derived(editor.files.length === 0);
 
@@ -116,9 +140,9 @@
       class="brut-btn-primary"
       type="button"
       onclick={applyAndDownload}
-      disabled={!editor.canDownload}
+      disabled={!canApply}
     >
-      {t("actions.applyDownload", lang)}
+      {downloadButtonText}
     </button>
   </footer>
 

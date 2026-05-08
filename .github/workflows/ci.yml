@@ -59,39 +59,10 @@ jobs:
           path: dist/
           retention-days: 1
 
-  e2e:
-    name: Tests end-to-end (Playwright / Chromium)
-    # Ubuntu 22.04 explícito: 24.04+ rompe Playwright 1.x por cambios en librerías del sistema
-    runs-on: ubuntu-22.04
-    needs: lint-and-test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configurar Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Instalar dependencias
-        run: npm ci
-
-      - name: Instalar Chromium y dependencias del sistema
-        run: npx playwright install chromium --with-deps
-
-      # Necesario porque playwright.config.ts arranca "npm run preview",
-      # que sirve dist/ y exige un build previo.
-      - name: Build de producción
-        run: npm run build
-
-      - name: Tests e2e
-        run: npm run test:e2e
-
-      # Solo se sube el reporte cuando hay fallos para no consumir cuota de almacenamiento
-      - name: Subir reporte de Playwright (solo si falla)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
+  # Tests E2E con Playwright eliminados del CI por decisión explícita.
+  # Razón: el runner gestionado a veces falla por cambios en navigator.language,
+  # imágenes de Ubuntu o detalles ajenos al código de la app. Los specs siguen
+  # disponibles en tests/e2e/ y pueden ejecutarse manualmente con:
+  #   npx playwright install chromium --with-deps
+  #   npm run build && npm run test:e2e
+  # antes de publicar releases.

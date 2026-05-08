@@ -7,6 +7,29 @@ El versionado sigue [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.2.0] - 2026-05-08
+
+### Added
+
+- Modo «Lote» en los controles de marca de agua: tercera pestaña junto a «Texto» e «Imagen» para generar un PDF/imagen por destinatario en una única operación.
+- Textarea con contador `N/50` para introducir hasta 50 nombres (uno por línea), con soporte de comentarios (`#`) y filtrado de líneas vacías.
+- Carga de nombres desde fichero `.txt` o `.csv` y descarga de plantilla TXT generada en cliente (`plantilla-marcas.txt` / `watermark-template.txt`) sin servir ningún asset estático adicional.
+- Selector «Vista previa para» que cambia el nombre mostrado en la vista en vivo sin reprocesar todo el lote.
+- Generación de un único ZIP `marcas-personalizadas-YYYY-MM-DD.zip` con una subcarpeta por destinatario (slug ASCII estable) y un `manifest.json` en la raíz que lista nombre, carpeta y archivos generados.
+- Validaciones del lote (mínimo 1 nombre, máximo 50, longitud por nombre, deduplicación case-insensitive) con mensajes accesibles vía `aria-live`.
+- 34 tests nuevos (`batch.test.ts`, `batch-template.test.ts`, `editor-batch.test.ts`) que cubren parseo, slugify, deduplicación, generación del ZIP y privacidad del estado.
+
+### Changed
+
+- El botón inferior «Aplicar y descargar» cambia su texto a «Generar lote (N×M archivos)» y su acción a `runWatermarkBatchPersonalized` cuando el modo lote está activo.
+- `WatermarkControls.svelte` admite tres modos mutuamente excluyentes; el toggle imagen ↔ texto gana un tercer estado «Lote».
+
+### Security
+
+- El estado del lote (nombres y raw text) se mantiene exclusivamente en memoria del navegador. No se persiste en `localStorage`, `sessionStorage` ni cookies. Al recargar la página los nombres desaparecen, alineado con la naturaleza potencialmente sensible de los datos (empleados, clientes, destinatarios de un documento confidencial).
+
+---
+
 ## [1.0.0] - 2026-05-08
 
 ### Added

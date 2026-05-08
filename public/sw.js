@@ -1,17 +1,24 @@
-// Service Worker minimo para PDF Watermark.
-// Estrategia:
-// - Precache del shell de la app (HTML, JS, CSS, iconos) en install.
-// - Cache-first para assets con hash en el nombre (inmutables).
-// - Network-first para HTML (para que la app se actualice al desplegar).
-// - Soporte offline: si no hay red, sirve desde cache.
+// Service Worker minimo y conservador para PDF Watermark.
 //
-// Privacidad: NO cachea ningun dato de usuario. Solo recursos publicos del
-// propio sitio. Los archivos que el usuario procesa NUNCA pasan por aqui:
-// se manipulan en memoria del navegador y se descargan al disco directamente.
+// Estrategia (revisada en v2 tras un incidente con MIME types cacheados):
+// - SOLO cachea iconos, manifest y favicon (recursos pequeños y estables).
+// - NO cachea HTML, JS, modulos .mjs, CSS ni assets de Astro. Esos pasan
+//   directo a la red. Asi evitamos servir versiones obsoletas tras deploy
+//   y cualquier respuesta con MIME incorrecto cacheada accidentalmente.
+// - Si la red falla en una solicitud no cacheada, NO devolvemos nada
+//   (deja que el navegador maneje el error). El "modo offline" cubre solo
+//   los recursos pequeños precacheados; si quieres usar el procesador
+//   sin red, abre la pagina con red al menos una vez y manten la pestaña.
+//
+// Privacidad: NO cachea ningun dato de usuario. Los archivos que el usuario
+// procesa nunca pasan por el SW: se manipulan en memoria del navegador y
+// se descargan al disco directamente.
 
-const CACHE_NAME = "pdf-watermark-v1";
+const CACHE_NAME = "pdf-watermark-v2";
+
+// Solo precachemos recursos pequeños inmutables. Si en el futuro cambian,
+// se cambia CACHE_NAME para forzar invalidacion en navegadores existentes.
 const PRECACHE_URLS = [
-  "/",
   "/manifest.webmanifest",
   "/favicon.ico",
   "/favicon-16.png",
@@ -33,11 +40,12 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
+      // Borra TODOS los caches que no sean el actual. Esto incluye caches de
+      // versiones anteriores del SW que pudieran haber guardado respuestas
+      // con MIME incorrecto (incidente .mjs servido como octet-stream).
       const keys = await caches.keys();
       await Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
       await self.clients.claim();
     })()
@@ -46,41 +54,30 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-
-  // Solo gestionamos GET del mismo origen. Todo lo demas (Google Analytics,
-  // gtag.js, etc.) pasa directo a la red, sin cachearlo.
   if (request.method !== "GET") return;
+
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Assets con hash en el nombre (Astro): cache-first, son inmutables.
-  if (url.pathname.startsWith("/_astro/") || url.pathname.match(/\.(png|jpg|jpeg|webp|svg|ico|woff2?|ttf)$/)) {
-    event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ||
-          fetch(request).then((response) => {
-            if (response.ok) {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-      )
-    );
-    return;
-  }
+  // Whitelist explicita: solo respondemos desde cache para el set pequeño
+  // de recursos precacheados. Todo lo demas (HTML, JS, .mjs, CSS, assets de
+  // Astro, dynamic imports) pasa directo a la red sin tocar el SW.
+  const isCacheable = PRECACHE_URLS.includes(url.pathname);
+  if (!isCacheable) return;
 
-  // HTML y todo lo demas: network-first con fallback a cache (para offline).
+  // Para los cacheables: cache-first con actualizacion en background.
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+    caches.match(request).then((cached) => {
+      const networkUpdate = fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => null);
+      return cached || networkUpdate;
+    })
   );
 });

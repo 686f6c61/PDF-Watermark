@@ -26,6 +26,31 @@ import {
   loadConfigFromStorage,
   saveConfigToStorage,
 } from "../storage";
+import {
+  parseBatchInput,
+  slugify,
+  dedupeSlugs,
+  BATCH_LIMITS,
+  type BatchWarning,
+} from "../batch";
+
+// Estado efimero del lote personalizado. NO se persiste en localStorage:
+// los nombres del lote son potencialmente sensibles (empleados, clientes,
+// destinatarios de un documento confidencial). Mantenemos esta condicion
+// como invariante a nivel de modulo: nada de este tipo entra en el store
+// persistente.
+type BatchState = {
+  enabled: boolean;
+  names: string[];
+  rawText: string;
+  warnings: BatchWarning[];
+};
+
+type BatchManifestEntry = {
+  name: string;
+  folder: string;
+  files: string[];
+};
 
 type RejectedFile = { file: File; reason: string };
 
@@ -63,6 +88,14 @@ class EditorStore {
   // Pagina actualmente visible en el preview por archivo. Reactivo para que los
   // chips de PageSelector y el slider compartan la misma fuente de verdad.
   #previewPage = $state<Record<string, number>>({});
+
+  // Estado del lote personalizado (v1.2.0). Reactivo pero NO persistido.
+  batchState = $state<BatchState>({
+    enabled: false,
+    names: [],
+    rawText: "",
+    warnings: [],
+  });
 
   activeFile = $derived(this.files.find((f) => f.id === this.activeFileId) ?? null);
   totalSizeBytes = $derived(this.files.reduce((acc, f) => acc + f.file.size, 0));
@@ -302,6 +335,146 @@ class EditorStore {
       this.fatalError = err instanceof Error ? err.message : "Fallo al empaquetar el resultado";
     }
   }
+
+  // --- API de lote personalizado (v1.2.0) ---------------------------------
+
+  setBatchRawText(raw: string): void {
+    const parsed = parseBatchInput(raw);
+    this.batchState = {
+      ...this.batchState,
+      rawText: raw,
+      names: parsed.names,
+      warnings: parsed.warnings,
+    };
+  }
+
+  enableBatch(): void {
+    this.batchState = { ...this.batchState, enabled: true };
+  }
+
+  disableBatch(): void {
+    // Vaciamos tambien config.text si arrastraba un nombre de la vista previa
+    // para evitar que un nombre del lote acabe persistido en localStorage al
+    // volver a modo "texto" tras desactivar el lote.
+    if (this.batchState.enabled && this.batchState.names.includes(this.config.text)) {
+      this.config = { ...this.config, text: "" };
+    }
+    this.batchState = { enabled: false, names: [], rawText: "", warnings: [] };
+  }
+
+  /**
+   * Procesa un PDF/imagen + N nombres y produce un único ZIP con una
+   * subcarpeta por nombre (slug) y un `manifest.json` en la raíz.
+   *
+   * Estructura resultante:
+   *   marcas-personalizadas-2026-05-08.zip
+   *   ├── manifest.json
+   *   ├── juan-perez/
+   *   │   ├── informe-watermarked.pdf
+   *   │   └── logo-watermarked.png
+   *   └── maria-gomez/
+   *       └── ...
+   *
+   * No persiste estado en localStorage. La privacidad del nombre se respeta
+   * a nivel del store (`batchState`) y de los logs (no escribimos nombres).
+   */
+  async runWatermarkBatchPersonalized(): Promise<void> {
+    if (!this.batchState.enabled) return;
+    if (this.isProcessing) return;
+    if (this.batchState.names.length === 0) return;
+    if (this.files.length === 0) return;
+
+    this.fatalError = null;
+    this.isProcessing = true;
+
+    const names = [...this.batchState.names];
+    const folders = dedupeSlugs(names.map((n) => slugify(n)));
+    const totalSteps = names.length * this.files.length;
+    this.progress = { current: 0, total: totalSteps };
+
+    let imageEngine: typeof import("../watermark/image") | null = null;
+    let pdfEngine: typeof import("../watermark/pdf") | null = null;
+
+    const JSZipModule = await import("jszip");
+    const zip = new JSZipModule.default();
+    const manifest: BatchManifestEntry[] = [];
+    let stepCounter = 0;
+
+    try {
+      for (let i = 0; i < names.length; i += 1) {
+        const personName = names[i]!;
+        const folder = folders[i]!;
+        const personConfig: WatermarkConfig = { ...this.config, text: personName };
+        const filesPerPerson: string[] = [];
+
+        for (const item of this.files) {
+          stepCounter += 1;
+          this.progress = { current: stepCounter, total: totalSteps };
+
+          if (item.status === "error") continue;
+
+          let blob: Blob;
+          if (item.type === "image") {
+            if (!imageEngine) imageEngine = await import("../watermark/image");
+            blob = await imageEngine.applyWatermarkToImage(item.file, personConfig);
+          } else {
+            if (!pdfEngine) pdfEngine = await import("../watermark/pdf");
+            blob = await pdfEngine.applyWatermarkToPdf(
+              item.file,
+              personConfig,
+              item.selectedPages ?? [],
+            );
+          }
+
+          const outputName = buildBatchOutputName(item.file.name, item.type);
+          zip.file(`${folder}/${outputName}`, blob);
+          filesPerPerson.push(outputName);
+        }
+
+        manifest.push({ name: personName, folder, files: filesPerPerson });
+      }
+
+      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const { saveAs } = await import("file-saver");
+      const stamp = todayStamp(new Date());
+      saveAs(zipBlob, `marcas-personalizadas-${stamp}.zip`);
+    } catch (err) {
+      this.fatalError =
+        err instanceof WatermarkError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Fallo al generar el lote personalizado";
+    } finally {
+      this.isProcessing = false;
+    }
+  }
 }
+
+// --- helpers privados del modulo (no exportados) --------------------------
+
+function todayStamp(date: Date): string {
+  const yyyy = date.getFullYear().toString();
+  const mm = (date.getMonth() + 1).toString().padStart(2, "0");
+  const dd = date.getDate().toString().padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function buildBatchOutputName(originalName: string, type: "pdf" | "image"): string {
+  const dot = originalName.lastIndexOf(".");
+  const base = dot === -1 ? originalName : originalName.slice(0, dot);
+  const ext =
+    dot === -1
+      ? type === "pdf"
+        ? "pdf"
+        : "png"
+      : originalName.slice(dot + 1).toLowerCase();
+  return `${base}-watermarked.${ext}`;
+}
+
+// Re-export para que callers externos (UI) puedan leer los limites sin
+// importar dos modulos distintos.
+export { BATCH_LIMITS };
 
 export const editor = new EditorStore();

@@ -36,7 +36,10 @@
   async function loadPdfjs() {
     if (pdfjsModule) return pdfjsModule;
     const mod = await import("pdfjs-dist");
-    mod.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    // Cache buster: si el archivo se sirvio mal alguna vez (MIME, CORP, etc.)
+    // y quedo cacheado por el navegador, este sufijo fuerza una URL nueva
+    // y por tanto un fetch fresco. Bumpear el numero al cambiar la version.
+    mod.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs?v=2";
     pdfjsModule = mod;
     return mod;
   }

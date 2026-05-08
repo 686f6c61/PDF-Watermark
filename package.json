@@ -1,6 +1,6 @@
 {
   "name": "pdf-watermark",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Aplicacion web estatica para aplicar marcas de agua a PDFs e imagenes en el navegador.",

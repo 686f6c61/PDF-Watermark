@@ -79,6 +79,7 @@
     "title": "Configuration",
     "modeText": "Text",
     "modeImage": "Image",
+    "modeBatch": "Batch",
     "modeAriaLabel": "Watermark type",
     "imageUpload": "Upload image (PNG or WebP, max 2 MB)",
     "imageRemove": "Remove image",
@@ -108,6 +109,21 @@
     "resetCustomPosition": "Reset to center",
     "resetCustomPositionHint": "Watermark placed manually"
   },
+  "batch": {
+    "title": "Personalized watermark batch",
+    "useCase": "Useful for auditing: each recipient gets the same PDF with their name as the watermark. If the document leaks, the name identifies the source.",
+    "placeholder": "One name per line, max 50",
+    "uploadFile": "Upload TXT/CSV",
+    "downloadTemplate": "Download template",
+    "previewLabel": "Preview for:",
+    "errorTooMany": "Maximum 50 names allowed",
+    "errorTooFew": "At least one name required",
+    "errorDuplicates": "There are duplicate names, they will be processed as one",
+    "errorInvalidLength": "Some names had invalid length and were skipped",
+    "errorNoFiles": "Upload at least one PDF or image to use batch mode",
+    "counter": "{count}/50 names",
+    "processing": "Processing {current} of {total}"
+  },
   "preview": {
     "ariaLabel": "Active file preview",
     "tagOriginal": "Original",
@@ -131,6 +147,7 @@
   },
   "actions": {
     "applyDownload": "Apply and download",
+    "generateBatch": "Generate batch ({count} files)",
     "files": "file",
     "filesPlural": "files",
     "processing": "Processing",

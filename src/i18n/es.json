@@ -79,6 +79,7 @@
     "title": "Configuración",
     "modeText": "Texto",
     "modeImage": "Imagen",
+    "modeBatch": "Lote",
     "modeAriaLabel": "Tipo de marca de agua",
     "imageUpload": "Subir imagen (PNG o WebP, máx. 2 MB)",
     "imageRemove": "Eliminar imagen",
@@ -108,6 +109,21 @@
     "resetCustomPosition": "Reset al centro",
     "resetCustomPositionHint": "Marca colocada manualmente"
   },
+  "batch": {
+    "title": "Marcas personalizadas en lote",
+    "useCase": "Útil para auditoría: cada destinatario recibe el mismo PDF con su nombre marcado. Si el documento se filtra, el nombre identifica el origen.",
+    "placeholder": "Un nombre por línea, máx. 50",
+    "uploadFile": "Subir TXT/CSV",
+    "downloadTemplate": "Descargar plantilla",
+    "previewLabel": "Vista previa para:",
+    "errorTooMany": "Máximo 50 nombres permitidos",
+    "errorTooFew": "Al menos un nombre necesario",
+    "errorDuplicates": "Hay nombres duplicados, se procesarán como uno solo",
+    "errorInvalidLength": "Algunos nombres tienen una longitud inválida y se descartaron",
+    "errorNoFiles": "Sube al menos un PDF o imagen para usar el lote",
+    "counter": "{count}/50 nombres",
+    "processing": "Procesando {current} de {total}"
+  },
   "preview": {
     "ariaLabel": "Vista previa del archivo activo",
     "tagOriginal": "Original",
@@ -131,6 +147,7 @@
   },
   "actions": {
     "applyDownload": "Aplicar y descargar",
+    "generateBatch": "Generar lote ({count} archivos)",
     "files": "archivo",
     "filesPlural": "archivos",
     "processing": "Procesando",

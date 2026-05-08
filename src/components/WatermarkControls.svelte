@@ -1,6 +1,7 @@
 <script lang="ts">
   import { editor } from "../lib/state/editor.svelte";
   import { LIMITS, type FontFamily, type Pattern } from "../lib/watermark/types";
+  import { downloadBatchTemplate } from "../lib/batch-template";
   import { t, type Lang } from "../i18n/t";
 
   type Props = { lang?: Lang };
@@ -23,12 +24,13 @@
     editor.config.pattern === "diagonal" || editor.config.pattern === "spiral",
   );
 
-  // Modo activo de la marca: texto o imagen. Estado local porque el usuario
-  // puede pulsar "Imagen" antes de subir nada (tenemos que mostrar el input
-  // file), y NO podemos derivarlo solo de imageDataUrl (eso seria un circulo:
-  // sin imagen no hay modo imagen, asi que el input file no aparece, asi que
-  // el usuario no puede subir imagen).
-  let watermarkMode = $state<"text" | "image">(
+  // Modo activo de la marca: texto, imagen o lote personalizado. Estado
+  // local porque el usuario puede pulsar "Imagen" antes de subir nada
+  // (tenemos que mostrar el input file), y NO podemos derivarlo solo de
+  // imageDataUrl (eso seria un circulo: sin imagen no hay modo imagen, asi
+  // que el input file no aparece, asi que el usuario no puede subir imagen).
+  type WatermarkMode = "text" | "image" | "batch";
+  let watermarkMode = $state<WatermarkMode>(
     typeof editor.config.imageDataUrl === "string" && editor.config.imageDataUrl.length > 0
       ? "image"
       : "text",
@@ -36,15 +38,43 @@
 
   // Si el usuario carga una imagen desde fuera (por ejemplo restaurando
   // configuracion de localStorage al recargar), sincronizamos al modo imagen.
+  // Solo si no estamos ya en modo lote: el lote tiene precedencia mientras
+  // este activo.
   $effect(() => {
     if (
       typeof editor.config.imageDataUrl === "string" &&
       editor.config.imageDataUrl.length > 0 &&
-      watermarkMode !== "image"
+      watermarkMode === "text"
     ) {
       watermarkMode = "image";
     }
   });
+
+  // Indice del nombre seleccionado para la vista previa cuando el lote esta
+  // activo. Se resetea si el numero de nombres cambia.
+  let batchPreviewIndex = $state(0);
+  $effect(() => {
+    if (batchPreviewIndex >= editor.batchState.names.length) {
+      batchPreviewIndex = 0;
+    }
+  });
+
+  // Sincroniza el config.text con el nombre seleccionado para que el preview
+  // (que reacciona a config.text) muestre la marca real del destinatario.
+  $effect(() => {
+    if (
+      watermarkMode === "batch" &&
+      editor.batchState.enabled &&
+      editor.batchState.names.length > 0
+    ) {
+      const selected = editor.batchState.names[batchPreviewIndex] ?? "";
+      if (selected.length > 0 && editor.config.text !== selected) {
+        editor.updateConfig({ text: selected });
+      }
+    }
+  });
+
+  let batchTextarea: HTMLTextAreaElement | null = $state(null);
 
   const showResetCustomPosition = $derived(
     editor.config.pattern === "single-center" && editor.config.customPosition !== null && editor.config.customPosition !== undefined,
@@ -90,14 +120,73 @@
     editor.clearCustomPosition();
   }
 
-  function setMode(mode: "text" | "image") {
+  function setMode(mode: WatermarkMode) {
     watermarkMode = mode;
     if (mode === "text") {
       editor.setWatermarkImage(null);
+      editor.disableBatch();
       imageError = null;
+    } else if (mode === "image") {
+      editor.disableBatch();
+    } else {
+      // mode === "batch": desactivamos imagen y activamos el lote.
+      editor.setWatermarkImage(null);
+      editor.enableBatch();
+      // Foco en textarea al cambiar a modo lote (accesibilidad).
+      queueMicrotask(() => batchTextarea?.focus());
     }
-    // En modo "image" no borramos la imagen actual: el usuario puede haber
-    // alternado entre texto e imagen sin querer perder la imagen ya cargada.
+  }
+
+  function onBatchInput(event: Event) {
+    const target = event.target as HTMLTextAreaElement;
+    editor.setBatchRawText(target.value);
+  }
+
+  async function onBatchFileChange(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    target.value = "";
+    if (!file) return;
+    const text = await file.text();
+    editor.setBatchRawText(text);
+  }
+
+  function onDownloadTemplate() {
+    downloadBatchTemplate(lang);
+  }
+
+  function onBatchPreviewSelect(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    batchPreviewIndex = Number(target.value);
+  }
+
+  // Mensajes de error/aviso del lote (mapeados a las claves de i18n).
+  const batchMessages = $derived.by((): Array<{ kind: "error" | "warn"; text: string }> => {
+    const out: Array<{ kind: "error" | "warn"; text: string }> = [];
+    const warnings = editor.batchState.warnings;
+    const noFiles = editor.files.length === 0;
+    if (watermarkMode !== "batch") return out;
+    if (noFiles) {
+      out.push({ kind: "error", text: t("batch.errorNoFiles", lang) });
+    }
+    if (warnings.includes("empty") && editor.batchState.rawText.length > 0) {
+      out.push({ kind: "error", text: t("batch.errorTooFew", lang) });
+    }
+    if (warnings.includes("too-many")) {
+      out.push({ kind: "warn", text: t("batch.errorTooMany", lang) });
+    }
+    if (warnings.includes("duplicates")) {
+      out.push({ kind: "warn", text: t("batch.errorDuplicates", lang) });
+    }
+    if (warnings.includes("invalid-length")) {
+      out.push({ kind: "warn", text: t("batch.errorInvalidLength", lang) });
+    }
+    return out;
+  });
+
+  function batchCounterText(): string {
+    const template = t("batch.counter", lang);
+    return template.replace("{count}", editor.batchState.names.length.toString());
   }
 
   // Carga del archivo PNG/WebP. Validamos en el cliente antes de aceptar:
@@ -179,10 +268,84 @@
       >
         {t("controls.modeImage", lang)}
       </button>
+      <button
+        type="button"
+        class="brut-btn"
+        aria-pressed={watermarkMode === "batch"}
+        data-active={watermarkMode === "batch"}
+        onclick={() => setMode("batch")}
+        disabled={editor.isProcessing}
+      >
+        {t("controls.modeBatch", lang)}
+      </button>
     </div>
   </fieldset>
 
-  {#if watermarkMode === "image"}
+  {#if watermarkMode === "batch"}
+    <fieldset>
+      <h4 class="batch-title">{t("batch.title", lang)}</h4>
+      <p class="hint use-case">{t("batch.useCase", lang)}</p>
+
+      <label for="wm-batch-text" class="legend">{t("batch.placeholder", lang)}</label>
+      <textarea
+        id="wm-batch-text"
+        class="brut-input batch-textarea"
+        bind:this={batchTextarea}
+        placeholder={t("batch.placeholder", lang)}
+        rows="8"
+        value={editor.batchState.rawText}
+        oninput={onBatchInput}
+        disabled={editor.isProcessing}
+        aria-describedby="wm-batch-counter wm-batch-messages"
+      ></textarea>
+      <div id="wm-batch-counter" class="counter" aria-live="polite">
+        {batchCounterText()}
+      </div>
+
+      <div class="row batch-actions">
+        <label class="brut-btn small file-button">
+          {t("batch.uploadFile", lang)}
+          <input
+            type="file"
+            accept=".txt,.csv,text/plain,text/csv"
+            onchange={onBatchFileChange}
+            disabled={editor.isProcessing}
+          />
+        </label>
+        <button
+          type="button"
+          class="brut-btn small"
+          onclick={onDownloadTemplate}
+          disabled={editor.isProcessing}
+        >
+          {t("batch.downloadTemplate", lang)}
+        </button>
+      </div>
+
+      {#if editor.batchState.names.length > 0}
+        <label for="wm-batch-preview" class="legend">{t("batch.previewLabel", lang)}</label>
+        <select
+          id="wm-batch-preview"
+          class="brut-input"
+          value={batchPreviewIndex}
+          onchange={onBatchPreviewSelect}
+          disabled={editor.isProcessing}
+        >
+          {#each editor.batchState.names as name, idx (idx)}
+            <option value={idx}>{name}</option>
+          {/each}
+        </select>
+      {/if}
+
+      <div id="wm-batch-messages" class="batch-messages" aria-live="polite">
+        {#each batchMessages as msg (msg.text)}
+          <p class={msg.kind === "error" ? "invalid-msg" : "warn-msg"} role={msg.kind === "error" ? "alert" : undefined}>
+            {msg.text}
+          </p>
+        {/each}
+      </div>
+    </fieldset>
+  {:else if watermarkMode === "image"}
     <fieldset>
       <label for="wm-image" class="legend">{t("controls.imageUpload", lang)}</label>
       <input
@@ -267,7 +430,7 @@
     />
   </fieldset>
 
-  {#if watermarkMode === "text"}
+  {#if watermarkMode === "text" || watermarkMode === "batch"}
     <fieldset>
       <label for="wm-color">{t("controls.color", lang)}</label>
       <div class="row">
@@ -551,5 +714,51 @@
     color: var(--danger);
     font-weight: 700;
     font-size: var(--text-small);
+  }
+  .warn-msg {
+    margin: 0;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent-peach) 50%, var(--surface));
+    border: var(--border-thin);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: var(--text-small);
+  }
+  .batch-title {
+    margin: 0;
+    font-size: var(--text-h2);
+  }
+  .use-case {
+    margin: 0 0 var(--space-2) 0;
+  }
+  .batch-textarea {
+    width: 100%;
+    min-height: 160px;
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  .batch-actions {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .batch-messages {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  /* Imitamos un boton bonito sobre el input file nativo. */
+  .file-button {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .file-button input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
   }
 </style>

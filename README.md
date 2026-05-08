@@ -14,13 +14,18 @@ Esto la hace especialmente útil para documentación sensible: DNIs, contratos, 
 
 ## Características
 
-- **Cuatro patrones de distribución:** diagonal en rejilla, único centrado, esquina inferior derecha y espiral de Arquímedes.
-- **Formatos soportados:** PDF, PNG, JPG/JPEG y WebP.
+- **Cuatro patrones de distribución:** diagonal en rejilla, único centrado (arrastrable con el ratón en el preview), esquina inferior derecha y espiral de Arquímedes.
+- **Tres modos de marca:** texto personalizable, **imagen** (PNG/WebP con transparencia) o **lote** (hasta 50 destinatarios distintos en una sola operación).
+- **Modo lote para trazabilidad:** subes un PDF y un fichero `.txt`/`.csv` con nombres; la app genera un PDF por destinatario con su nombre como marca. Útil para auditar filtraciones: el nombre identifica el origen.
+- **Plantilla descargable** del fichero de nombres con una sola pulsación (`plantilla-marcas.txt`).
+- **Internacionalización ES + EN** con detección automática del idioma del navegador y selector manual en el header.
+- **Aplicación web instalable (PWA):** manifiesto, icono y service worker para funcionamiento offline tras la primera carga.
+- **Formatos de entrada:** PDF, PNG, JPG/JPEG y WebP.
 - **Procesamiento por lotes:** hasta 50 archivos en una sola operación con configuración común.
 - **Selección de páginas en PDF:** elige qué páginas reciben la marca y deja el resto intactas.
 - **Vista previa en vivo:** divisor arrastrable que muestra el original a la izquierda y el resultado a la derecha. Se actualiza en menos de 250 ms tras cada ajuste.
-- **Descarga inteligente:** un solo archivo se descarga directamente; varios se empaquetan en un ZIP fechado.
-- **Persistencia opcional:** la última configuración se guarda en `localStorage` del propio navegador y se puede borrar desde la interfaz.
+- **Descarga inteligente:** un solo archivo se descarga directamente; varios o lotes personalizados se empaquetan en un ZIP fechado con `manifest.json` cuando aplica.
+- **Persistencia controlada:** texto, color y patrón se guardan en `localStorage` del navegador y se pueden borrar desde la interfaz; los nombres del modo lote NO se persisten nunca (caso de uso sensible).
 - **Accesibilidad completa:** navegación por teclado, etiquetas ARIA, contraste AA, anuncios `aria-live` en el progreso del lote.
 - **Sin instalación:** funciona directamente en el navegador; no requiere extensiones ni plugins.
 
@@ -44,7 +49,7 @@ Una barra inferior fija muestra el recuento de archivos y el botón «Aplicar y 
 
 ### Requisitos previos
 
-- Node.js 20 o superior.
+- Node.js 22 o superior (Astro 6 lo exige).
 - npm 10 o superior.
 
 ### Instalación
@@ -81,14 +86,15 @@ npm run preview
 
 | Capa | Tecnología |
 |---|---|
-| Framework estático | Astro 5 (`output: "static"`) |
+| Framework estático | Astro 6 (`output: "static"`) con i18n nativo (`/`, `/en/`) |
 | Isla interactiva | Svelte 5 con runas (`$state`, `$derived`, `$effect`) |
 | Estilos | Tailwind CSS 4 |
 | Procesamiento de imágenes | Canvas API (`OffscreenCanvas` cuando está disponible) |
 | Procesamiento de PDFs | pdf-lib 1.17.1 (escritura) + pdfjs-dist 5.x (renderizado de previews) |
 | Empaquetado de resultados | JSZip 3.x + file-saver 2.x |
-| Tests unitarios | Vitest 2.x |
-| Tests end-to-end | Playwright 1.x |
+| PWA | Web App Manifest + Service Worker (cache-first para assets, network-first para HTML) |
+| Tests unitarios | Vitest 3.x |
+| Tests end-to-end | Playwright 1.x (no se ejecutan en CI; ver sección «Tests E2E manualmente») |
 
 Bundle de JavaScript inicial: menos de 200 KB. `pdfjs-dist` y `pdf-lib` se cargan bajo demanda solo cuando el usuario sube su primer PDF.
 
@@ -149,12 +155,21 @@ pdf-watermark/
 | Comando | Descripción |
 |---|---|
 | `npm run dev` | Servidor de desarrollo en `http://localhost:4321` |
-| `npm run build` | Build de producción en `dist/` |
+| `npm run build` | Build de producción en `dist/` (genera 4 páginas: ES + EN) |
 | `npm run preview` | Previsualización del build antes de desplegar |
-| `npm test` | Ejecuta los tests unitarios con Vitest |
+| `npm test` | Ejecuta los 161 tests unitarios con Vitest |
 | `npm run test:watch` | Tests unitarios en modo observador |
-| `npm run test:e2e` | Tests end-to-end con Playwright |
+| `npm run test:e2e` | Tests end-to-end con Playwright (manual, no en CI) |
 | `npm run typecheck` | Comprobación de tipos con `astro check` |
+
+### Tests E2E manualmente
+
+Los tests end-to-end con Playwright no se ejecutan en CI por inestabilidad del runner gestionado (cambios de imágenes Ubuntu, navigator.language, etc.). Para correrlos en local antes de un release:
+
+```bash
+npx playwright install chromium --with-deps
+npm run build && npm run test:e2e
+```
 
 ---
 
