@@ -22,7 +22,7 @@
     "file-saver": "2.0.5",
     "jszip": "3.10.1",
     "pdf-lib": "1.17.1",
-    "pdfjs-dist": "5.7.284",
+    "pdfjs-dist": "6.1.200",
     "svelte": "5.56.6",
     "tailwindcss": "4.2.4"
   },
