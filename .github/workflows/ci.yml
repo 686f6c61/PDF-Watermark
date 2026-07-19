@@ -12,7 +12,7 @@ jobs:
     name: Auditoría de dependencias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configurar Node.js 22
         uses: actions/setup-node@v4
@@ -32,7 +32,7 @@ jobs:
     name: Lint, tipos y tests unitarios
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configurar Node.js 22
         uses: actions/setup-node@v4
