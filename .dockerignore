@@ -28,6 +28,7 @@ coverage/
 # Documentación (no necesaria en la imagen)
 docs/
 *.md
+!CHANGELOG.md
 LICENSE
 
 # Editor
