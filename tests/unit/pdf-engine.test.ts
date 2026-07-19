@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { inflateSync } from "node:zlib";
 import { PDFDocument } from "pdf-lib";
 import { applyWatermarkToPdf } from "../../src/lib/watermark/pdf";
 import { DEFAULT_CONFIG, WatermarkError, type WatermarkConfig } from "../../src/lib/watermark/types";
@@ -16,6 +17,39 @@ async function buildBlankPdfFile(pageCount: number): Promise<File> {
 
 function configWith(overrides: Partial<WatermarkConfig>): WatermarkConfig {
   return { ...DEFAULT_CONFIG, text: "TEST", ...overrides };
+}
+
+// Extrae los textos dibujados (operandos de los operadores Tj) del content
+// stream decodificado de una pagina. pdf-lib serializa el texto como cadenas
+// hex (<4C49...> Tj) y el stream va comprimido con FlateDecode al recargar.
+function pageDrawnTexts(doc: PDFDocument, pageIndex: number): string[] {
+  const page = doc.getPages()[pageIndex]!;
+  const contents = page.node.Contents();
+  if (!contents) return [];
+  const ctx = doc.context;
+  const items: unknown[] =
+    typeof (contents as { asArray?: unknown }).asArray === "function"
+      ? (contents as { asArray: () => unknown[] }).asArray()
+      : [contents];
+  const texts: string[] = [];
+  for (const item of items) {
+    const stream = (item as { getContents?: unknown }).getContents
+      ? (item as { getContents: () => Uint8Array })
+      : (ctx.lookup(item as never) as { getContents?: () => Uint8Array } | undefined);
+    if (!stream || typeof stream.getContents !== "function") continue;
+    const raw = stream.getContents();
+    let decoded: Uint8Array;
+    try {
+      decoded = inflateSync(Buffer.from(raw));
+    } catch {
+      decoded = raw; // stream sin FlateDecode: lo leemos tal cual
+    }
+    const ops = Buffer.from(decoded).toString("latin1");
+    for (const match of ops.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) {
+      texts.push(Buffer.from(match[1]!, "hex").toString("latin1"));
+    }
+  }
+  return texts;
 }
 
 describe("applyWatermarkToPdf", () => {
@@ -154,5 +188,31 @@ describe("applyWatermarkToPdf", () => {
     const secondPageSize = sizes[1]!;
     expect(secondPageSize).toBeGreaterThan(firstPageSize);
     expect(secondPageSize).toBeGreaterThan(20);
+  });
+
+  it("dibuja cada linea de un texto multi-linea como un Tj propio", async () => {
+    const file = await buildBlankPdfFile(1);
+    const blob = await applyWatermarkToPdf(
+      file,
+      configWith({ pattern: "single-center", text: "LINEA1\nLINEA2" }),
+      [1],
+    );
+    const reloaded = await PDFDocument.load(await blob.arrayBuffer());
+    const texts = pageDrawnTexts(reloaded, 0);
+    // Una sola posicion (single-center) y dos lineas => exactamente dos
+    // operadores Tj, uno por linea, con el espacio final de getRenderText.
+    expect(texts).toEqual(["LINEA1 ", "LINEA2 "]);
+  });
+
+  it("sustituye {pagina} y {total} por pagina dentro del documento", async () => {
+    const file = await buildBlankPdfFile(2);
+    const blob = await applyWatermarkToPdf(
+      file,
+      configWith({ pattern: "single-center", text: "Pág. {pagina}/{total}" }),
+      [1, 2],
+    );
+    const reloaded = await PDFDocument.load(await blob.arrayBuffer());
+    expect(pageDrawnTexts(reloaded, 0)).toEqual(["Pág. 1/2 "]);
+    expect(pageDrawnTexts(reloaded, 1)).toEqual(["Pág. 2/2 "]);
   });
 });

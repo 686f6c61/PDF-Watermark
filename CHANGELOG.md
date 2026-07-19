@@ -7,6 +7,50 @@ El versionado sigue [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [Unreleased]
+
+## [1.3.0] - 2026-07-18
+
+### Added
+
+- Layout compartido `src/layouts/BaseLayout.astro` (con `SiteHeader.astro` y `SiteFooter.astro`) usado por las cuatro páginas (ES/EN × index/privacidad): elimina la duplicación de header, footer, `<head>` SEO y estilos, y con ella la deriva entre idiomas. El enlace a X/Twitter, el header sticky y el guardado de la preferencia de idioma son ahora consistentes en las cuatro páginas.
+- Scripts estáticos en `public/js/` (`gtag-init.js`, `lang-redirect.js`, `lang-pref.js`, `sw-register.js`) que sustituyen a los snippets inline de las páginas.
+- Test `tests/unit/security-headers.test.ts` que verifica en CI que la CSP es idéntica en las cuatro plataformas (nginx, Netlify, Vercel y Cloudflare Pages), que ninguna envía `Cross-Origin-Embedder-Policy` y que los hashes SHA-256 de los scripts de hidratación de Astro siguen vigentes.
+- Configuración de Dependabot (`.github/dependabot.yml`): actualizaciones semanales de npm (grupos `astro-svelte` y `testing`), GitHub Actions y Docker.
+- Variables dinámicas en el texto de la marca: `{fecha}`, `{nombre}`, `{pagina}` y `{total}`, con indicación visible junto al campo de texto.
+- Modo de tamaño «Proporcional al lienzo»: la marca escala con el ancho de cada página o imagen en lugar de usar siempre un tamaño fijo en píxeles.
+- Tamaño de la marca de imagen como porcentaje del lienzo (`imageScale`, 5-100 %): en modo imagen el deslizador manda sobre el mayor tamaño que cabe bajo el techo del patrón conservando la proporción del logo, así que el control responde de forma monótona en todo su rango — con `fontSize` el tope de lienzo colapsaba la mayor parte del recorrido al mismo tamaño, sobre todo con logos apaisados en mosaico. El deslizador en píxeles y el conmutador «Proporcional al lienzo» se reservan a texto y lote, donde siguen igual.
+- Texto de marca multilínea (hasta 3 líneas).
+- Presets de configuración: guardar, aplicar y borrar combinaciones habituales, persistidos en el navegador.
+- Rangos de páginas en el selector (`1, 3-5, 8-`), junto a los atajos «Todas»/«Ninguna».
+- Rejilla de posición 3×3 para colocar la marca en las nueve posiciones habituales sin arrastrar.
+- Inputs numéricos junto a los deslizadores y botones de restablecer (rotación a 0°, posición al centro, configuración completa); los controles solo se muestran cuando aplican al patrón o modo elegido.
+- Funcionamiento offline real (service worker v3): precache de iconos, manifiesto, worker de pdf.js, las cuatro rutas HTML y todos los assets hasheados del build (inyectados en `dist/sw.js` por `scripts/inject-precache.mjs` al final de `npm run build`, necesario porque las islas de Astro se declaran como `component-url` y no son descubribles parseando el HTML); HTML network-first con caída a caché y assets en cache-first con guardado en runtime. Las respuestas se guardan sin la cabecera `Vary` (los servidores que envían `Vary: Origin` rompían el match de la Cache API para los módulos JS, que sí envían `Origin`). Tras la primera carga, la aplicación completa funciona sin conexión —también en `localhost`, donde el SW se registra para poder probarlo—, como promete la landing. Un guard exige `Content-Type` JavaScript en los scripts cacheados para evitar la repetición del incidente histórico de MIME types.
+- Copy de la landing y de la descripción SEO que nombra explícitamente las marcas de «texto o imagen» (ES/EN).
+- Versión visible en el footer (`v{versión} · Changelog`, leída de `package.json` en build) que abre un popup con el historial de cambios: el contenido es el propio `CHANGELOG.md` compilado por Astro, así que nunca se desincroniza. Implementado con `<dialog>` nativo (Esc cierra, foco atrapado) con cierre por botón y por clic en el backdrop, estilos acordes al diseño y textos en ES/EN.
+- Imagen Open Graph renovada y por idioma: `scripts/generate-og.mjs` (script npm `generate:og`) renderiza la plantilla con los tokens de marca en un navegador headless y genera `public/og-image.png` (ES) y `public/og-image-en.png` (EN, nueva) a 1200×630; cada página enlaza la de su idioma en `og:image` y `twitter:image`. Metadatos de compartir completados: `twitter:site`/`twitter:creator` (`@686f6c61`), `og:image:type` y `og:image:alt`/`twitter:image:alt` en las cuatro páginas (antes solo en los index), `site` declarado en `astro.config.mjs` y `lastmod` del sitemap al día.
+
+### Changed
+
+- Reglas de `Cache-Control` para HTML corregidas en Netlify, Vercel y Cloudflare Pages: los patrones `/*.html` estaban muertos porque las URLs reales son limpias; ahora se aplica `Cache-Control: no-cache` explícitamente a `/`, `/privacidad/`, `/en/` y `/en/privacy/`.
+- `vercel.json` deja de enviar `Cross-Origin-Embedder-Policy: require-corp`, alineado con el resto de plataformas (retirada deliberada documentada en `nginx.conf`).
+- Google Analytics pasa a carga condicional real: `gtag-init.js` (Consent Mode v2, todo denegado por defecto) ya no descarga el script de googletagmanager.com al entrar; solo lo inyecta tras el «Aceptar» del banner —o si ya se aceptó en una visita anterior— concediendo únicamente `analytics_storage`. Sin consentimiento no hay ninguna petición a terceros: ni script, ni pings, ni cookies. La sección 5 de la política de privacidad se reescribe en ES/EN para describir este modelo.
+- README corregido para reflejar el estado real del proyecto: estructura de `src/` y `public/`, requisito de Node 20.3+ y formulación exacta de la CSP.
+
+### Fixed
+
+- Sección de promesas de la landing: ampliada a seis tarjetas (nuevas «Tus archivos, solo en memoria» y «Código abierto», ES/EN) con rejilla 3×2 (antes 3+1 con una tarjeta huérfana), texto alineado al inicio (heredaba `text-align: center` de la sección hero, lo que descompensaba las tarjetas con más texto), cabecera de tarjeta con badge y título en fila centrada y cuerpo a todo el ancho (ritmo visual uniforme aunque un título ocupe dos líneas), segunda promesa reestructurada con título corto (mismo texto, repartido entre título y cuerpo) y dos colores de acento nuevos (`--accent-sky`, `--accent-yellow`).
+- Marcas de imagen: tamaño máximo limitado (60 % de la dimensión de página en marca única, 25 % en mosaico), espaciado calculado a partir del tamaño real de la imagen en lugar de una constante, patrón de esquina con margen interior y hueco equivalente a una marca entre logos en el mosaico para que nunca se solapen.
+- Selector de páginas movido a la columna izquierda, bajo la lista de archivos (ancho fijo de 320 px en escritorio, 100 % en móvil): antes iba encima de la vista previa y la desplazaba hacia abajo al aparecer; la preview mantiene ahora siempre su posición.
+- Panel de configuración sin desbordes: el selector de imagen de marca ya no se sale de la columna — el input de archivo nativo (botón + «Ningún archivo seleccionado») se sustituye por un botón brutalista y el nombre de fichero truncado con elipsis, manteniendo el input oculto pero accesible — y la fila de presets deja de sobresalir 35 px (Blink aplica `min-inline-size: min-content` a `fieldset` en su hoja de estilos interna y el input de nombre, con ancho intrínseco por `size=20`, impedía encoger; se anula con `min-width: 0` en la cadena fieldset → fila → input).
+
+### Security
+
+- CSP endurecida: `script-src` sin `'unsafe-inline'` en las cuatro plataformas. Los dos únicos scripts inline que quedan (los que Astro inyecta siempre para hidratar las islas) se autorizan por hash SHA-256. Eliminada además la directiva obsoleta `block-all-mixed-content`, redundante con `upgrade-insecure-requests`.
+- Actualizaciones de dependencias con advisories: astro 6.3.1 → 6.4.8 (3 high), svelte 5.55.5 → 5.56.6 (moderados de XSS/ReDoS), vitest 3.2.4 → 3.2.7 (critical) y transitivas vía `npm audit fix` (devalue, undici, vite, js-yaml, yaml). Quedan 3 vulnerabilidades low en esbuild 0.27.x cuyo fix exige astro 7 (breaking); se retomará con la migración a Astro 7.
+
+---
+
 ## [1.2.0] - 2026-05-08
 
 ### Added

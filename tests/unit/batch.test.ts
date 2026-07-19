@@ -163,4 +163,19 @@ describe("dedupeSlugs", () => {
   it("sustituye un slug vacío por 'sin-nombre' con sufijo si colisiona", () => {
     expect(dedupeSlugs(["", ""])).toEqual(["sin-nombre", "sin-nombre-2"]);
   });
+
+  it("no reutiliza un slug ya emitido aunque venga de otro nombre (caso A / A 2 / A)", () => {
+    // "A" -> "a", "A 2" -> "a-2", "A" -> colisiona con "a" y su candidato
+    // "a-2" ya esta usado: debe saltar a "a-3" para garantizar unicidad real.
+    const slugs = ["A", "A 2", "A"].map(slugify);
+    const deduped = dedupeSlugs(slugs);
+    expect(deduped).toEqual(["a", "a-2", "a-3"]);
+    expect(new Set(deduped).size).toBe(deduped.length);
+  });
+
+  it("encadena sufijos cuando el candidato numerado tambien colisiona", () => {
+    const deduped = dedupeSlugs(["a", "a", "a-2", "a"]);
+    expect(deduped).toEqual(["a", "a-2", "a-2-2", "a-3"]);
+    expect(new Set(deduped).size).toBe(deduped.length);
+  });
 });

@@ -25,9 +25,29 @@
         return t("fileList.statusError", lang);
     }
   }
+
+  // "Quitar todo" pide confirmacion nativa antes de vaciar: la accion no
+  // tiene deshacer y la lista puede haber costado de cargar.
+  function removeAll() {
+    if (editor.files.length === 0) return;
+    if (window.confirm(t("fileList.confirmRemoveAll", lang))) {
+      editor.removeAllFiles();
+    }
+  }
 </script>
 
 <aside class="file-list" aria-label={t("fileList.ariaLabel", lang)}>
+  <div class="list-header">
+    <button
+      class="brut-btn remove-all"
+      type="button"
+      disabled={editor.isProcessing || editor.files.length === 0}
+      onclick={removeAll}
+    >
+      {t("fileList.removeAll", lang)}
+    </button>
+  </div>
+
   <FileDropzone variant="compact" {lang} />
 
   <ul>
@@ -60,8 +80,8 @@
               {/if}
             </span>
             <span class="status">{statusLabel(item)}</span>
-            {#if item.errorMessage}
-              <span class="error-msg">{item.errorMessage}</span>
+            {#if item.errorCode}
+              <span class="error-msg">{t("errors." + item.errorCode, lang)}</span>
             {/if}
           </div>
         </button>
@@ -105,6 +125,27 @@
     flex-shrink: 0;
     max-height: calc(100vh - 200px);
     overflow-y: auto;
+  }
+  .list-header {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .remove-all {
+    font-size: var(--text-small);
+    padding: var(--space-1) var(--space-3);
+  }
+  .remove-all:hover:not(:disabled) {
+    background: var(--accent-pink);
+  }
+  .remove-all:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  /* Por debajo de 1024px la columna lateral pasa a ocupar todo el ancho. */
+  @media (max-width: 1023px) {
+    .file-list {
+      width: 100%;
+    }
   }
   ul {
     list-style: none;
@@ -185,7 +226,7 @@
   }
   .error-msg {
     font-size: var(--text-tiny);
-    color: var(--danger);
+    color: var(--danger-text);
     font-weight: 800;
   }
   .remove {

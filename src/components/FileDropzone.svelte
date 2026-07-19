@@ -7,16 +7,11 @@
   const { variant = "hero", lang = "es" }: Props = $props();
 
   let isDragOver = $state(false);
-  let errorMessage = $state<string | null>(null);
+  let errors = $state<string[]>([]);
   let inputRef: HTMLInputElement | null = $state(null);
-  let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function showError(msg: string) {
-    errorMessage = msg;
-    if (errorTimer) clearTimeout(errorTimer);
-    errorTimer = setTimeout(() => {
-      errorMessage = null;
-    }, 4000);
+  function dismissErrors() {
+    errors = [];
   }
 
   async function handleFiles(filesList: FileList | File[] | null) {
@@ -25,8 +20,7 @@
     if (arr.length === 0) return;
     const result = await editor.addFiles(arr);
     if (result.rejected.length > 0) {
-      const first = result.rejected[0]!;
-      showError(`${first.file.name}: ${first.reason}`);
+      errors = result.rejected.map((r) => `${r.file.name}: ${t("errors." + r.code, lang)}`);
     }
   }
 
@@ -40,6 +34,7 @@
   }
   function onDrop(event: DragEvent) {
     event.preventDefault();
+    event.stopPropagation();
     isDragOver = false;
     const files = event.dataTransfer?.files ?? null;
     void handleFiles(files);
@@ -63,7 +58,7 @@
 <div
   class="dropzone {variant === 'hero' ? 'hero' : 'compact'}"
   class:dragover={isDragOver}
-  class:error={errorMessage !== null}
+  class:error={errors.length > 0}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
@@ -120,8 +115,22 @@
   />
 </div>
 
-{#if errorMessage}
-  <div class="error-msg" role="alert" aria-live="polite">{errorMessage}</div>
+{#if errors.length > 0}
+  <div class="error-msg" role="alert" aria-live="polite">
+    <ul>
+      {#each errors as error}
+        <li>{error}</li>
+      {/each}
+    </ul>
+    <button
+      type="button"
+      class="brut-btn dismiss"
+      aria-label={t("dropzone.dismissError", lang)}
+      onclick={dismissErrors}
+    >
+      ✕
+    </button>
+  </div>
 {/if}
 
 <style>
@@ -178,6 +187,9 @@
     font-size: var(--text-small);
   }
   .error-msg {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
     margin-top: var(--space-3);
     background: color-mix(in srgb, var(--danger) 15%, var(--surface));
     border: 2px solid var(--danger);
@@ -186,5 +198,14 @@
     border-radius: var(--radius-md);
     font-weight: 600;
     color: var(--ink);
+  }
+  .error-msg ul {
+    flex: 1;
+    margin: 0;
+    padding-left: var(--space-4);
+  }
+  .dismiss {
+    flex-shrink: 0;
+    line-height: 1;
   }
 </style>

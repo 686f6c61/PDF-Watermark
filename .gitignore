@@ -30,11 +30,14 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# Astro
-.astro/
-
 # Cache de Vite
 .vite/
+
+# CLIs de despliegue (IDs de proyecto, tokens locales, caches)
+.vercel/
+.netlify/
+.wrangler/
+.dev.vars
 
 # Alfred Dev (no compartir memoria interna ni estado de sesion)
 .claude/

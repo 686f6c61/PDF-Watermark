@@ -1,4 +1,5 @@
-import { DEFAULT_CONFIG, type WatermarkConfig } from "./watermark/types";
+import { DEFAULT_CONFIG, LIMITS, type WatermarkConfig } from "./watermark/types";
+import { validateRanges } from "./state/validation";
 
 const STORAGE_KEY = "watermark.config.v1";
 
@@ -17,6 +18,21 @@ function isValidImageDataUrl(value: unknown): boolean {
   return typeof value === "string";
 }
 
+function isValidRelativeSize(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return typeof value === "boolean";
+}
+
+function isValidImageScale(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= LIMITS.MIN_IMAGE_SCALE &&
+    value <= LIMITS.MAX_IMAGE_SCALE
+  );
+}
+
 function isValidShape(value: unknown): value is WatermarkConfig {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -33,7 +49,9 @@ function isValidShape(value: unknown): value is WatermarkConfig {
     FONT_FAMILIES.includes(v.fontFamily as (typeof FONT_FAMILIES)[number]) &&
     // Campos nuevos opcionales: aceptamos tanto la ausencia como un valor valido.
     isValidCustomPosition(v.customPosition) &&
-    isValidImageDataUrl(v.imageDataUrl)
+    isValidImageDataUrl(v.imageDataUrl) &&
+    isValidRelativeSize(v.relativeSize) &&
+    isValidImageScale(v.imageScale)
   );
 }
 
@@ -54,7 +72,13 @@ export function loadConfigFromStorage(): WatermarkConfig | null {
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!isValidShape(parsed)) return null;
-    return { ...DEFAULT_CONFIG, ...parsed };
+    const merged = { ...DEFAULT_CONFIG, ...parsed };
+    // El shape check solo mira tipos: un NaN/Infinity (p. ej. "1e999" parsea
+    // como Infinity) o un valor fuera de LIMITS colaria y podria colgar la
+    // pestaña (espiral con miles de millones de iteraciones). Si algo queda
+    // fuera de rango, descartamos la config guardada y caemos a los defaults.
+    if (validateRanges(merged).length > 0) return null;
+    return merged;
   } catch {
     return null;
   }

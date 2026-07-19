@@ -36,7 +36,10 @@
   --accent-lime: #c6f5a6;
   --accent-lavender: #c5b4ff;
   --accent-peach: #ffcda8;
+  --accent-sky: #a8e0ff;
+  --accent-yellow: #ffe9a8;
   --danger: #ff6b6b;
+  --danger-text: #d63333;
 
   --border-thin: 2px solid var(--ink);
   --border-thick: 3px solid var(--ink);

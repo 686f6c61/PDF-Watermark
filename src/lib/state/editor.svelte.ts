@@ -18,6 +18,8 @@ import {
   DEFAULT_CONFIG,
   LIMITS,
   WatermarkError,
+  type FatalErrorCode,
+  type FileErrorCode,
   type FileItem,
   type WatermarkConfig,
 } from "../watermark/types";
@@ -26,6 +28,8 @@ import {
   loadConfigFromStorage,
   saveConfigToStorage,
 } from "../storage";
+import { isWinAnsiEncodable, validateConfig } from "./validation";
+import { applyTextVariables } from "../watermark/text-variables";
 import {
   parseBatchInput,
   slugify,
@@ -52,12 +56,16 @@ type BatchManifestEntry = {
   files: string[];
 };
 
-type RejectedFile = { file: File; reason: string };
+type RejectedFile = { file: File; code: FileErrorCode };
 
 type AddFilesResult = {
   accepted: FileItem[];
   rejected: RejectedFile[];
 };
+
+// Espera de la persistencia debounced de la config en localStorage (ver el
+// $effect del constructor). setWatermarkImage guarda aparte, sin debounce.
+const PERSIST_DEBOUNCE_MS = 400;
 
 function detectType(file: File): "pdf" | "image" | null {
   const name = file.name.toLowerCase();
@@ -83,7 +91,7 @@ class EditorStore {
   config = $state<WatermarkConfig>(loadConfigFromStorage() ?? { ...DEFAULT_CONFIG });
   isProcessing = $state(false);
   progress = $state({ current: 0, total: 0 });
-  fatalError = $state<string | null>(null);
+  fatalErrorCode = $state<FatalErrorCode | null>(null);
 
   // Pagina actualmente visible en el preview por archivo. Reactivo para que los
   // chips de PageSelector y el slider compartan la misma fuente de verdad.
@@ -99,6 +107,11 @@ class EditorStore {
 
   activeFile = $derived(this.files.find((f) => f.id === this.activeFileId) ?? null);
   totalSizeBytes = $derived(this.files.reduce((acc, f) => acc + f.file.size, 0));
+
+  // Petición de cancelación de un lote en curso. Los runners la comprueban
+  // entre pasos y salen limpios por el finally; la UI la pone con cancel().
+  cancelRequested = $state(false);
+  isCancelling = $derived(this.isProcessing && this.cancelRequested);
 
   canDownload = $derived(
     this.files.length > 0 &&
@@ -116,39 +129,50 @@ class EditorStore {
   constructor() {
     if (typeof window !== "undefined") {
       $effect.root(() => {
+        // Persistencia con debounce: serializar TODA la config (incluida una
+        // imagen de marca de hasta ~2,7 MB en data URL) en cada keystroke o
+        // pointermove del drag bloqueaba el hilo principal con decenas de
+        // escrituras por segundo. Re-programamos en cada cambio y escribimos
+        // solo cuando la config lleva PERSIST_DEBOUNCE_MS quieta.
         $effect(() => {
-          saveConfigToStorage({ ...this.config });
+          const snapshot = { ...this.config };
+          const timer = setTimeout(() => {
+            saveConfigToStorage(snapshot);
+          }, PERSIST_DEBOUNCE_MS);
+          return () => clearTimeout(timer);
         });
       });
     }
   }
 
+  // Solicita cancelar el lote en curso. Los runners la atienden entre pasos;
+  // mientras no hay procesamiento activo es un no-op.
+  cancel(): void {
+    if (!this.isProcessing) return;
+    this.cancelRequested = true;
+  }
+
   async addFiles(input: File[]): Promise<AddFilesResult> {
+    // Durante un lote no aceptamos altas: el progreso ya esta fijado y los
+    // runners trabajan sobre una copia de la cola, asi que un alta en
+    // caliente quedaria huerfana. No-op con retorno vacio.
+    if (this.isProcessing) return { accepted: [], rejected: [] };
     const accepted: FileItem[] = [];
     const rejected: RejectedFile[] = [];
     let availableSlots = LIMITS.MAX_FILES_PER_BATCH - this.files.length;
 
     for (const file of input) {
       if (availableSlots <= 0) {
-        rejected.push({
-          file,
-          reason: `No se pueden añadir más archivos (límite de ${LIMITS.MAX_FILES_PER_BATCH})`,
-        });
+        rejected.push({ file, code: "limitBatch" });
         continue;
       }
       const type = detectType(file);
       if (!type) {
-        rejected.push({
-          file,
-          reason: "Formato no admitido. Se aceptan PDF, PNG, JPG, JPEG y WebP.",
-        });
+        rejected.push({ file, code: "formatRejected" });
         continue;
       }
       if (file.size > LIMITS.MAX_FILE_SIZE_BYTES) {
-        rejected.push({
-          file,
-          reason: `El archivo supera el límite de ${LIMITS.MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB`,
-        });
+        rejected.push({ file, code: "fileTooLarge" });
         continue;
       }
       const id = crypto.randomUUID();
@@ -170,10 +194,10 @@ class EditorStore {
           // Aceptamos el archivo pero lo marcamos como error visible al usuario,
           // en lugar de silenciar el cifrado con ignoreEncryption.
           item.status = "error";
-          item.errorMessage = meta.message;
+          item.errorCode = "pdfProtected";
         } else {
           URL.revokeObjectURL(previewUrl);
-          rejected.push({ file, reason: meta.message });
+          rejected.push({ file, code: "pdfDamaged" });
           continue;
         }
       }
@@ -191,6 +215,9 @@ class EditorStore {
   }
 
   removeFile(id: string): void {
+    // Durante un lote no se puede quitar: el runner ya tiene la cola
+    // copiada y una baja en caliente dejaria trabajo huerfano.
+    if (this.isProcessing) return;
     const target = this.files.find((f) => f.id === id);
     if (target) {
       try {
@@ -207,6 +234,24 @@ class EditorStore {
       const { [id]: _, ...rest } = this.#previewPage;
       this.#previewPage = rest;
     }
+  }
+
+  // Vacia la lista entera: revoca las previews, limpia el estado derivado y
+  // resetea progreso y error fatal. No-op mientras hay un lote en curso.
+  removeAllFiles(): void {
+    if (this.isProcessing) return;
+    for (const item of this.files) {
+      try {
+        URL.revokeObjectURL(item.previewUrl);
+      } catch {
+        // ignorar errores de revocacion
+      }
+    }
+    this.files = [];
+    this.activeFileId = null;
+    this.#previewPage = {};
+    this.progress = { current: 0, total: 0 };
+    this.fatalErrorCode = null;
   }
 
   getPreviewPage(fileId: string): number {
@@ -247,6 +292,9 @@ class EditorStore {
   // responsable de validar tamaño y formato antes de invocar este metodo.
   setWatermarkImage(dataUrl: string | null): void {
     this.config = { ...this.config, imageDataUrl: dataUrl };
+    // Guardado inmediato, sin pasar por el debounce: la imagen cuesta de
+    // generar y no debe perderse si la pestaña se cierra justo despues.
+    saveConfigToStorage({ ...this.config });
   }
 
   clearStorage(): void {
@@ -267,72 +315,119 @@ class EditorStore {
     this.files = next;
   }
 
+  // Fija la seleccion de paginas de un PDF de golpe (rangos escritos por el
+  // usuario, botones Todas/Ninguna). Filtra duplicados y fuera de rango y
+  // deja la lista ordenada, igual que togglePage. Acepta [] (Ninguna).
+  setSelectedPages(fileId: string, pages: number[]): void {
+    const next = this.files.map((f) => {
+      if (f.id !== fileId || f.type !== "pdf" || !f.pageCount) return f;
+      const total = f.pageCount;
+      const cleaned = [...new Set(pages.filter((p) => Number.isInteger(p) && p >= 1 && p <= total))]
+        .sort((a, b) => a - b);
+      return { ...f, selectedPages: cleaned };
+    });
+    this.files = next;
+  }
+
   async runBatch(): Promise<void> {
     if (this.isProcessing || this.files.length === 0) return;
-    this.fatalError = null;
+    this.fatalErrorCode = null;
+    // Puerta de seguridad: la UI limita los valores, pero la config puede
+    // llegar corrupta (localStorage antiguo, estados intermedios). Si no es
+    // valida, abortamos antes de tocar ningun archivo.
+    if (!validateConfig(this.config).ok) {
+      this.fatalErrorCode = "invalidConfig";
+      return;
+    }
     this.isProcessing = true;
-    this.progress = { current: 0, total: this.files.length };
+    this.cancelRequested = false;
+
+    // Snapshots: ni la config ni la cola deben cambiar a mitad de lote aunque
+    // el estado mute por otra via. El bucle solo lee estas copias.
+    const config: WatermarkConfig = { ...this.config };
+    const queue = [...this.files];
+    // Fecha de hoy para la variable {fecha}, fijada una vez por lote (misma
+    // filosofia snapshot: no debe cambiar a mitad de lote).
+    const fechaHoy = new Date().toLocaleDateString("es-ES");
+    this.progress = { current: 0, total: queue.length };
 
     // Preservamos los archivos que ya estan en error (p. ej. PDFs protegidos):
     // no se procesan ni se les resetea el estado, pero siguen visibles.
     this.files = this.files.map((f) =>
-      f.status === "error" && f.errorMessage
+      f.status === "error" && f.errorCode
         ? f
-        : { ...f, status: "pending", resultBlob: undefined, errorMessage: undefined },
+        : { ...f, status: "pending", resultBlob: undefined, errorCode: undefined },
     );
 
     let imageEngine: typeof import("../watermark/image") | null = null;
     let pdfEngine: typeof import("../watermark/pdf") | null = null;
+    let cancelled = false;
 
-    for (let i = 0; i < this.files.length; i += 1) {
-      const current = this.files[i]!;
-      this.progress = { current: i + 1, total: this.files.length };
-      if (current.status === "error") {
-        // Saltamos archivos ya marcados como error sin tocar su estado.
-        continue;
-      }
-      this.files = this.files.map((f) =>
-        f.id === current.id ? { ...f, status: "processing" } : f,
-      );
-      try {
-        let blob: Blob;
-        if (current.type === "image") {
-          if (!imageEngine) imageEngine = await import("../watermark/image");
-          blob = await imageEngine.applyWatermarkToImage(current.file, this.config);
-        } else {
-          if (!pdfEngine) pdfEngine = await import("../watermark/pdf");
-          blob = await pdfEngine.applyWatermarkToPdf(
-            current.file,
-            this.config,
-            current.selectedPages ?? [],
-          );
+    try {
+      for (let i = 0; i < queue.length; i += 1) {
+        if (this.cancelRequested) {
+          cancelled = true;
+          break;
+        }
+        const current = queue[i]!;
+        this.progress = { current: i + 1, total: queue.length };
+        if (current.status === "error") {
+          // Saltamos archivos ya marcados como error sin tocar su estado.
+          continue;
         }
         this.files = this.files.map((f) =>
-          f.id === current.id ? { ...f, status: "done", resultBlob: blob } : f,
+          f.id === current.id ? { ...f, status: "processing" } : f,
         );
-      } catch (err) {
-        const message = err instanceof WatermarkError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Fallo desconocido al procesar el archivo";
-        this.files = this.files.map((f) =>
-          f.id === current.id ? { ...f, status: "error", errorMessage: message } : f,
-        );
+        try {
+          let blob: Blob;
+          // Variables de nivel archivo ({fecha}, {nombre}) sobre el snapshot:
+          // cada archivo recibe su propia config con el texto resuelto.
+          const fileConfig = resolveFileLevelVariables(config, current.file.name, fechaHoy);
+          if (current.type === "image") {
+            if (!imageEngine) imageEngine = await import("../watermark/image");
+            blob = await imageEngine.applyWatermarkToImage(current.file, fileConfig);
+          } else {
+            if (!pdfEngine) pdfEngine = await import("../watermark/pdf");
+            blob = await pdfEngine.applyWatermarkToPdf(
+              current.file,
+              fileConfig,
+              current.selectedPages ?? [],
+            );
+          }
+          this.files = this.files.map((f) =>
+            f.id === current.id ? { ...f, status: "done", resultBlob: blob } : f,
+          );
+        } catch (err) {
+          const code: FileErrorCode = err instanceof WatermarkError
+            ? toFileErrorCode(err)
+            : "unknown";
+          this.files = this.files.map((f) =>
+            f.id === current.id ? { ...f, status: "error", errorCode: code } : f,
+          );
+        }
       }
+    } finally {
+      this.isProcessing = false;
+      this.cancelRequested = false;
     }
 
-    this.isProcessing = false;
+    if (cancelled) {
+      // Salida limpia: sin descarga ni error fatal, progreso reseteado. Los
+      // archivos procesados conservan su resultado; el resto queda pending.
+      this.progress = { current: 0, total: 0 };
+      return;
+    }
+
     const completed = this.files.filter((f) => f.status === "done" && f.resultBlob);
     if (completed.length === 0) {
-      this.fatalError = "Ningún archivo se pudo procesar correctamente";
+      this.fatalErrorCode = "fatalNothingProcessed";
       return;
     }
     try {
       const { downloadResults } = await import("../zip");
       await downloadResults(completed);
-    } catch (err) {
-      this.fatalError = err instanceof Error ? err.message : "Fallo al empaquetar el resultado";
+    } catch {
+      this.fatalErrorCode = "fatalPackagingFailure";
     }
   }
 
@@ -384,12 +479,41 @@ class EditorStore {
     if (this.batchState.names.length === 0) return;
     if (this.files.length === 0) return;
 
-    this.fatalError = null;
-    this.isProcessing = true;
+    this.fatalErrorCode = null;
+    // Misma puerta de seguridad que en runBatch: config invalida -> abortar
+    // antes de procesar nada.
+    if (!validateConfig(this.config).ok) {
+      this.fatalErrorCode = "invalidConfig";
+      return;
+    }
+    // Los nombres se dibujan como texto con fuentes WinAnsi: un nombre con
+    // emoji/CJK/arabe haria lanzar a pdf-lib a mitad del lote. Lo detectamos
+    // aqui, antes de generar un solo archivo.
+    if (!this.batchState.names.every(isWinAnsiEncodable)) {
+      this.fatalErrorCode = "textNotEncodable";
+      return;
+    }
 
+    // Snapshots de cola y config: el lote no debe ver cambios en caliente.
     const names = [...this.batchState.names];
+    const queue = [...this.files];
+    const baseConfig: WatermarkConfig = { ...this.config };
+    // Misma fecha fijada para todo el lote (variable {fecha}), como en runBatch.
+    const fechaHoy = new Date().toLocaleDateString("es-ES");
+
+    // Tope de pasos: cada paso genera un blob que se acumula en un unico
+    // JSZip en RAM hasta el empaquetado final. Por encima del limite,
+    // abortamos antes de generar nada.
+    if (queue.length * names.length > LIMITS.maxBatchSteps) {
+      this.fatalErrorCode = "batchTooManySteps";
+      return;
+    }
+
+    this.isProcessing = true;
+    this.cancelRequested = false;
+
     const folders = dedupeSlugs(names.map((n) => slugify(n)));
-    const totalSteps = names.length * this.files.length;
+    const totalSteps = names.length * queue.length;
     this.progress = { current: 0, total: totalSteps };
 
     let imageEngine: typeof import("../watermark/image") | null = null;
@@ -399,60 +523,142 @@ class EditorStore {
     const zip = new JSZipModule.default();
     const manifest: BatchManifestEntry[] = [];
     let stepCounter = 0;
+    let successCount = 0;
+    let cancelled = false;
+    // Un archivo que falla para un nombre fallara para todos (el error es del
+    // archivo, no del nombre): lo marcamos una vez y lo saltamos en adelante.
+    const failedIds = new Set<string>();
 
     try {
       for (let i = 0; i < names.length; i += 1) {
+        if (this.cancelRequested) {
+          cancelled = true;
+          break;
+        }
         const personName = names[i]!;
         const folder = folders[i]!;
-        const personConfig: WatermarkConfig = { ...this.config, text: personName };
+        const personConfig: WatermarkConfig = { ...baseConfig, text: personName };
         const filesPerPerson: string[] = [];
 
-        for (const item of this.files) {
+        for (const item of queue) {
+          if (this.cancelRequested) {
+            cancelled = true;
+            break;
+          }
           stepCounter += 1;
           this.progress = { current: stepCounter, total: totalSteps };
 
-          if (item.status === "error") continue;
+          if (item.status === "error" || failedIds.has(item.id)) continue;
 
-          let blob: Blob;
-          if (item.type === "image") {
-            if (!imageEngine) imageEngine = await import("../watermark/image");
-            blob = await imageEngine.applyWatermarkToImage(item.file, personConfig);
-          } else {
-            if (!pdfEngine) pdfEngine = await import("../watermark/pdf");
-            blob = await pdfEngine.applyWatermarkToPdf(
-              item.file,
+          // Cada paso va aislado: un archivo malo no aborta el lote entero,
+          // se marca en su FileItem y se continua con el siguiente.
+          try {
+            let blob: Blob;
+            // El texto del lote personalizado es el propio nombre, pero las
+            // variables de nivel archivo ({fecha}, {nombre}) aplican igual.
+            const personFileConfig = resolveFileLevelVariables(
               personConfig,
-              item.selectedPages ?? [],
+              item.file.name,
+              fechaHoy,
+            );
+            if (item.type === "image") {
+              if (!imageEngine) imageEngine = await import("../watermark/image");
+              blob = await imageEngine.applyWatermarkToImage(item.file, personFileConfig);
+            } else {
+              if (!pdfEngine) pdfEngine = await import("../watermark/pdf");
+              blob = await pdfEngine.applyWatermarkToPdf(
+                item.file,
+                personFileConfig,
+                item.selectedPages ?? [],
+              );
+            }
+
+            const outputName = buildBatchOutputName(item.file.name, item.type);
+            zip.file(`${folder}/${outputName}`, blob);
+            filesPerPerson.push(outputName);
+            successCount += 1;
+          } catch (err) {
+            const code: FileErrorCode = err instanceof WatermarkError
+              ? toFileErrorCode(err)
+              : "unknown";
+            failedIds.add(item.id);
+            this.files = this.files.map((f) =>
+              f.id === item.id ? { ...f, status: "error", errorCode: code } : f,
             );
           }
-
-          const outputName = buildBatchOutputName(item.file.name, item.type);
-          zip.file(`${folder}/${outputName}`, blob);
-          filesPerPerson.push(outputName);
         }
 
+        if (cancelled) break;
         manifest.push({ name: personName, folder, files: filesPerPerson });
       }
 
-      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      const { saveAs } = await import("file-saver");
-      const stamp = todayStamp(new Date());
-      saveAs(zipBlob, `marcas-personalizadas-${stamp}.zip`);
+      if (!cancelled) {
+        if (successCount === 0) {
+          // Misma semantica que runBatch: si nada salio bien, no hay ZIP.
+          this.fatalErrorCode = "fatalNothingProcessed";
+        } else {
+          // Fallos parciales: ya estan marcados por archivo; el ZIP sale
+          // con lo bueno.
+          zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+          const zipBlob = await zip.generateAsync({ type: "blob" });
+          const { saveAs } = await import("file-saver");
+          const stamp = todayStamp(new Date());
+          saveAs(zipBlob, `marcas-personalizadas-${stamp}.zip`);
+        }
+      }
     } catch (err) {
-      this.fatalError =
-        err instanceof WatermarkError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Fallo al generar el lote personalizado";
+      this.fatalErrorCode =
+        err instanceof WatermarkError ? toFileErrorCode(err) : "fatalPackagingFailure";
     } finally {
       this.isProcessing = false;
+      this.cancelRequested = false;
+    }
+
+    if (cancelled) {
+      // Salida limpia: sin ZIP ni error fatal, progreso reseteado.
+      this.progress = { current: 0, total: 0 };
     }
   }
 }
 
 // --- helpers privados del modulo (no exportados) --------------------------
+
+// Resuelve las variables de nivel archivo ({fecha}, {nombre}) en el texto de
+// la config para UN archivo concreto. {pagina}/{total} no se tocan aqui: las
+// sustituye el motor en el bucle de paginas (ver watermark/pdf.ts).
+// OJO: {nombre} puede introducir caracteres no WinAnsi (p. ej. un nombre de
+// archivo en chino). En ese caso el motor PDF lanzara el error de
+// codificacion WinAnsi al medir/dibujar el texto y el runner marcara el
+// archivo como error ("unknown"); no hace falta mas tratamiento.
+function resolveFileLevelVariables(
+  config: WatermarkConfig,
+  fileName: string,
+  fecha: string,
+): WatermarkConfig {
+  const dot = fileName.lastIndexOf(".");
+  const nombre = dot <= 0 ? fileName : fileName.slice(0, dot);
+  return { ...config, text: applyTextVariables(config.text, { fecha, nombre }) };
+}
+
+// Mapea los códigos tecnicos de WatermarkError (dominio) a los códigos
+// estables que la UI traduce con las claves "errors.*" de i18n.
+function toFileErrorCode(err: WatermarkError): FileErrorCode {
+  switch (err.code) {
+    case "PROTECTED_PDF":
+      return "pdfProtected";
+    case "PARSE_ERROR":
+      return "pdfDamaged";
+    case "INVALID_FORMAT":
+      return "formatRejected";
+    case "TOO_LARGE":
+      return "fileTooLarge";
+    case "BATCH_LIMIT":
+      return "limitBatch";
+    default:
+      // OUT_OF_MEMORY y UNKNOWN no tienen clave propia: mensaje generico.
+      return "unknown";
+  }
+}
 
 function todayStamp(date: Date): string {
   const yyyy = date.getFullYear().toString();

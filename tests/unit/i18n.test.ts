@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
+import esStrings from "../../src/i18n/es.json";
+import enStrings from "../../src/i18n/en.json";
 import { isLang, t } from "../../src/i18n/t";
+
+// Aplana { a: { b: "x" } } en ["a.b"] para comparar el inventario de claves.
+function flattenKeys(obj: Record<string, unknown>, prefix = ""): string[] {
+  return Object.entries(obj).flatMap(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    return value && typeof value === "object"
+      ? flattenKeys(value as Record<string, unknown>, path)
+      : [path];
+  });
+}
+
+describe("sincronizacion de diccionarios", () => {
+  it("es.json y en.json exponen exactamente las mismas claves", () => {
+    const esKeys = flattenKeys(esStrings as Record<string, unknown>).sort();
+    const enKeys = flattenKeys(enStrings as Record<string, unknown>).sort();
+    expect(esKeys).toEqual(enKeys);
+  });
+});
 
 describe("t() i18n helper", () => {
   it("devuelve la cadena en castellano cuando lang es 'es'", () => {

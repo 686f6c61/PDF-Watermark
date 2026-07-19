@@ -13,13 +13,26 @@
  *
  * @module watermark/image
  */
-import { computePositions, getRenderText } from "./patterns";
 import {
-  computeImageWatermarkSize,
+  computePositions,
+  getRenderText,
+  resolveEffectiveFontSize,
+  TEXT_LINE_HEIGHT,
+} from "./patterns";
+import { applyTextVariables } from "./text-variables";
+import {
+  computeImageWatermarkSizeFromScale,
   hasImageWatermark,
   hasTextWatermark,
+  imageMaxFractionForPattern,
+  type ImageDrawSize,
 } from "./image-watermark";
-import { WatermarkError, type FontFamily, type WatermarkConfig } from "./types";
+import {
+  LIMITS,
+  WatermarkError,
+  type FontFamily,
+  type WatermarkConfig,
+} from "./types";
 
 const FONT_STACK: Record<FontFamily, string> = {
   sans: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif",
@@ -66,8 +79,14 @@ function getContext(canvas: CanvasLike): CtxLike {
   return ctx as CtxLike;
 }
 
+// Type guard: en navegadores sin OffscreenCanvas (Safari < 16.4) evaluar
+// `instanceof OffscreenCanvas` directamente lanza ReferenceError.
+function isOffscreenCanvas(canvas: CanvasLike): canvas is OffscreenCanvas {
+  return typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas;
+}
+
 async function canvasToBlob(canvas: CanvasLike, mime: string, quality: number): Promise<Blob> {
-  if (canvas instanceof OffscreenCanvas) {
+  if (isOffscreenCanvas(canvas)) {
     const opts: ImageEncodeOptions = mime === "image/jpeg" || mime === "image/webp"
       ? { type: mime, quality }
       : { type: mime };
@@ -113,20 +132,37 @@ export async function applyWatermarkToImage(
     const ctx = getContext(canvas);
     ctx.drawImage(img, 0, 0, width, height);
 
-    const positions = computePositions(width, height, config);
+    // Tamaño efectivo para esta imagen: con relativeSize el fontSize del
+    // usuario se escala proporcionalmente al ancho del lienzo (una foto de
+    // 400 px y otra de 4000 px quedan proporcionadas). La config no cambia.
+    const effectiveFontSize = resolveEffectiveFontSize(config, width);
+    const effectiveConfig: WatermarkConfig = { ...config, fontSize: effectiveFontSize };
+
+    // Si hay marca de imagen la cargamos ANTES de calcular posiciones: el
+    // patron necesita el tamaño real de la marca (ya limitada al lienzo)
+    // para espaciar y anclar sin solapar ni desbordar.
+    let wmImg: HTMLImageElement | null = null;
+    let draw: ImageDrawSize | null = null;
+    if (hasImageWatermark(config)) {
+      wmImg = await loadImage(config.imageDataUrl as string);
+      draw = computeImageWatermarkSizeFromScale({
+        naturalWidth: wmImg.naturalWidth || wmImg.width,
+        naturalHeight: wmImg.naturalHeight || wmImg.height,
+        imageScale: config.imageScale ?? LIMITS.DEFAULT_IMAGE_SCALE,
+        canvasWidth: width,
+        canvasHeight: height,
+        maxFraction: imageMaxFractionForPattern(config.pattern),
+      });
+    }
+
+    const positions = computePositions(width, height, effectiveConfig, draw ?? undefined);
     ctx.globalAlpha = config.opacity;
 
     // Si hay imageDataUrl, dibujamos la imagen en cada posicion del patron
     // manteniendo la proporcion. Si no, caemos al render de texto clasico.
     // No mezclamos: si hay imagen, ignoramos el texto en este motor; el
     // usuario elige una u otra desde la UI con un selector exclusivo.
-    if (hasImageWatermark(config)) {
-      const wmImg = await loadImage(config.imageDataUrl as string);
-      const draw = computeImageWatermarkSize({
-        naturalWidth: wmImg.naturalWidth || wmImg.width,
-        naturalHeight: wmImg.naturalHeight || wmImg.height,
-        fontSize: config.fontSize,
-      });
+    if (wmImg && draw) {
       if (draw.width > 0 && draw.height > 0) {
         for (const pos of positions) {
           ctx.save();
@@ -137,16 +173,30 @@ export async function applyWatermarkToImage(
         }
       }
     } else if (hasTextWatermark(config)) {
-      ctx.font = `bold ${config.fontSize}px ${FONT_STACK[config.fontFamily]}`;
+      // Sin "bold": el PDF final usa las fuentes base-14 en peso regular y el
+      // preview debe medir/dibujar el texto con la misma anchura (paridad).
+      ctx.font = `${effectiveFontSize}px ${FONT_STACK[config.fontFamily]}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = config.color;
+
+      // Variables de nivel pagina: una imagen es una unica "pagina".
+      const resolvedText = applyTextVariables(config.text, { pagina: "1", total: "1" });
+      // Texto multi-linea: cada linea se dibuja centrada por separado, con la
+      // convencion del espacio final de getRenderText heredada por linea.
+      const renderLines = resolvedText.split("\n").map(getRenderText);
 
       for (const pos of positions) {
         ctx.save();
         ctx.translate(pos.x, pos.y);
         ctx.rotate((pos.rotation * Math.PI) / 180);
-        ctx.fillText(getRenderText(config.text), 0, 0);
+        for (let lineIndex = 0; lineIndex < renderLines.length; lineIndex += 1) {
+          // La linea i (0-based de n) se dibuja desplazada (i - (n-1)/2) *
+          // 1.2em respecto al centro, con el BLOQUE centrado en la posicion.
+          const dy =
+            (lineIndex - (renderLines.length - 1) / 2) * TEXT_LINE_HEIGHT * effectiveFontSize;
+          ctx.fillText(renderLines[lineIndex]!, 0, dy);
+        }
         ctx.restore();
       }
     }

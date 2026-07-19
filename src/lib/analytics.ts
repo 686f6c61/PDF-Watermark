@@ -1,46 +1,57 @@
-// Wrapper de Google Analytics 4 con Consent Mode v2.
+// Wrapper de Google Analytics 4 con Consent Mode v2 y carga condicional.
 //
 // Diseno:
-// - El bootstrap (dataLayer, funcion gtag, consent default DENIED y carga del
-//   script gtag.js) lo hace /public/gtag-init.js inline en el <head>. Esto es
-//   lo que permite que Google Tag Assistant detecte la etiqueta sin ejecutar
-//   el bundle de Svelte.
-// - Este modulo solo actualiza el consent cuando el usuario interactua con
-//   el banner: grantConsent() pasa todo a granted, revokeConsent() vuelve a
-//   denied.
-// - initAnalytics() existe para compatibilidad con el codigo que llama desde
-//   el layout, pero no hace nada porque el bootstrap inline ya se ejecuto.
+// - El bootstrap (dataLayer, stub de gtag, consent default DENIED y la
+//   funcion de carga condicional del script externo) vive en el fichero
+//   estatico /js/gtag-init.js, cargado con defer desde el <head>. El
+//   script de googletagmanager.com NO se descarga hasta que el usuario
+//   acepta: sin consentimiento no hay ninguna peticion a terceros.
+// - Este modulo solo se invoca cuando el usuario interactua con el banner:
+//   grantConsent() dispara la carga (que concede SOLO analytics_storage;
+//   la promesa de la landing es "solo medimos visitas": nada de funciones
+//   publicitarias) y revokeConsent() vuelve todo a denied en caliente.
+// - La decision la persiste CookieBanner en localStorage; gtag-init.js la
+//   relee al arrancar y precarga GA si ya se acepto antes.
+// - initAnalytics() existe para compatibilidad con el codigo que llama
+//   desde el layout, pero no hace nada: el bootstrap ya se ejecuto.
 
-interface DataLayerWindow {
+interface AnalyticsWindow {
   dataLayer?: unknown[];
   gtag?: (...args: unknown[]) => void;
+  __pwLoadAnalytics?: () => void;
 }
 
-function ensureGtag(): boolean {
-  const w = window as unknown as DataLayerWindow;
-  return Array.isArray(w.dataLayer) && typeof w.gtag === "function";
+function asAnalyticsWindow(): AnalyticsWindow {
+  return window as unknown as AnalyticsWindow;
 }
 
 export function initAnalytics(): void {
-  // No-op: gtag-init.js inline ya configuro consent default y cargo gtag.js.
+  // No-op: /js/gtag-init.js ya configuro el consent default y, si la
+  // decision guardada era "accepted", precargo GA.
   // Mantenemos la funcion exportada para no romper la API existente.
 }
 
 export function grantConsent(): void {
-  if (!ensureGtag()) return;
-  const w = window as unknown as DataLayerWindow;
-  w.gtag?.("consent", "update", {
-    analytics_storage: "granted",
-    ad_storage: "granted",
-    ad_user_data: "granted",
-    ad_personalization: "granted",
-  });
+  const w = asAnalyticsWindow();
+  if (typeof w.__pwLoadAnalytics === "function") {
+    // Camino normal: el loader encola el consent update (solo
+    // analytics_storage), js/config e inyecta gtag.js. Es idempotente.
+    w.__pwLoadAnalytics();
+    return;
+  }
+  // Fallback defensivo (paginas sin gtag-init.js): si al menos existe el
+  // stub de gtag, emite el update para no perder el consentimiento.
+  if (Array.isArray(w.dataLayer) && typeof w.gtag === "function") {
+    w.gtag("consent", "update", {
+      analytics_storage: "granted",
+    });
+  }
 }
 
 export function revokeConsent(): void {
-  if (!ensureGtag()) return;
-  const w = window as unknown as DataLayerWindow;
-  w.gtag?.("consent", "update", {
+  const w = asAnalyticsWindow();
+  if (!(Array.isArray(w.dataLayer) && typeof w.gtag === "function")) return;
+  w.gtag("consent", "update", {
     analytics_storage: "denied",
     ad_storage: "denied",
     ad_user_data: "denied",

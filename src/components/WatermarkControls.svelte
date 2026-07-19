@@ -1,5 +1,7 @@
 <script lang="ts">
   import { editor } from "../lib/state/editor.svelte";
+  import { isWinAnsiEncodable, validateConfig } from "../lib/state/validation";
+  import { deletePreset, listPresets, savePreset, type SavedPreset } from "../lib/presets";
   import { LIMITS, type FontFamily, type Pattern } from "../lib/watermark/types";
   import { downloadBatchTemplate } from "../lib/batch-template";
   import { t, type Lang } from "../i18n/t";
@@ -81,9 +83,41 @@
   );
 
   let imageError = $state<string | null>(null);
+  // Nombre del fichero de marca elegido en esta sesion (el config solo guarda
+  // el data URL). Al restaurar una imagen persistida se muestra un generico.
+  let imageName = $state<string | null>(null);
+  let imageInputEl: HTMLInputElement | null = $state(null);
+  const imageFileLabel = $derived(
+    editor.config.imageDataUrl
+      ? (imageName ?? t("controls.imageLoaded", lang))
+      : t("controls.imageNone", lang),
+  );
+
+  // El texto de la marca se dibuja con fuentes WinAnsi en los PDF: si lleva
+  // emoji u otro alfabeto, pdf-lib lanzaria al procesar. Lo avisamos en linea.
+  const textEncodable = $derived(isWinAnsiEncodable(editor.config.text));
+
+  // validateConfig reporta el exceso de lineas con el codigo "tooManyLines"
+  // (ver state/validation): lo traducimos en linea igual que el aviso WinAnsi.
+  const tooManyLines = $derived(
+    validateConfig(editor.config).errors.some((e) => e.code === "tooManyLines"),
+  );
+
+  // La espiral rota cada marca tangencialmente e ignora la rotacion
+  // configurada: el control queda deshabilitado para no mentir al usuario.
+  const rotationDisabled = $derived(
+    editor.isProcessing || editor.config.pattern === "spiral",
+  );
+
+  // En modo imagen el slider de tamaño manda sobre imageScale (% del techo
+  // del patron sobre el lienzo): el label cambia y la unidad pasa a ser %.
+  const sizeLabel = $derived(
+    watermarkMode === "image" ? t("controls.imageSize", lang) : t("controls.size", lang),
+  );
+  const imageScaleValue = $derived(editor.config.imageScale ?? LIMITS.DEFAULT_IMAGE_SCALE);
 
   function setText(event: Event) {
-    const target = event.target as HTMLInputElement;
+    const target = event.target as HTMLTextAreaElement;
     editor.updateConfig({ text: target.value.slice(0, LIMITS.MAX_TEXT_LENGTH) });
   }
   function setFontSize(event: Event) {
@@ -118,6 +152,113 @@
   }
   function resetCustomPosition() {
     editor.clearCustomPosition();
+  }
+
+  // Inputs numericos gemelos de los sliders: clamp a LIMITS al confirmar.
+  function clampNumber(value: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) return min;
+    return Math.min(max, Math.max(min, value));
+  }
+  function setFontSizeNumber(event: Event) {
+    const n = Number((event.target as HTMLInputElement).value);
+    editor.updateConfig({
+      fontSize: Math.round(clampNumber(n, LIMITS.MIN_FONT_SIZE, LIMITS.MAX_FONT_SIZE)),
+    });
+  }
+  // Modo imagen: el slider de tamaño manda sobre imageScale (% del techo del
+  // patron), no sobre fontSize — ver computeImageWatermarkSizeFromScale.
+  function setImageScale(event: Event) {
+    editor.updateConfig({ imageScale: Number((event.target as HTMLInputElement).value) });
+  }
+  function setImageScaleNumber(event: Event) {
+    const n = Number((event.target as HTMLInputElement).value);
+    editor.updateConfig({
+      imageScale: Math.round(clampNumber(n, LIMITS.MIN_IMAGE_SCALE, LIMITS.MAX_IMAGE_SCALE)),
+    });
+  }
+  function setOpacityPercent(event: Event) {
+    const n = Number((event.target as HTMLInputElement).value);
+    const percent = Math.round(
+      clampNumber(n, LIMITS.MIN_OPACITY * 100, LIMITS.MAX_OPACITY * 100),
+    );
+    editor.updateConfig({ opacity: percent / 100 });
+  }
+  function setRotationNumber(event: Event) {
+    const n = Number((event.target as HTMLInputElement).value);
+    editor.updateConfig({
+      rotation: Math.round(clampNumber(n, LIMITS.MIN_ROTATION, LIMITS.MAX_ROTATION)),
+    });
+  }
+  function setDensityNumber(event: Event) {
+    const n = Number((event.target as HTMLInputElement).value);
+    editor.updateConfig({
+      density: Math.round(clampNumber(n, LIMITS.MIN_DENSITY, LIMITS.MAX_DENSITY)),
+    });
+  }
+
+  // Rejilla 3x3 de posicion para el patron single-center: esquinas, centros
+  // de borde y centro geometrico, en coordenadas normalizadas 0-1.
+  const GRID_STOPS = [0.15, 0.5, 0.85] as const;
+  const GRID_POSITION_KEYS = [
+    ["controls.posTopLeft", "controls.posTopCenter", "controls.posTopRight"],
+    ["controls.posMiddleLeft", "controls.posCenter", "controls.posMiddleRight"],
+    ["controls.posBottomLeft", "controls.posBottomCenter", "controls.posBottomRight"],
+  ] as const;
+
+  // Boton de la rejilla mas cercano a la posicion actual (centro si no hay
+  // customPosition): es el que se muestra activo.
+  const activeGridCell = $derived.by(() => {
+    const current = editor.config.customPosition ?? { x: 0.5, y: 0.5 };
+    let best = { row: 1, col: 1 };
+    let bestDist = Infinity;
+    GRID_STOPS.forEach((y, row) => {
+      GRID_STOPS.forEach((x, col) => {
+        const dist = (current.x - x) ** 2 + (current.y - y) ** 2;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { row, col };
+        }
+      });
+    });
+    return best;
+  });
+
+  function setGridPosition(row: number, col: number) {
+    editor.updateConfig({
+      customPosition: { x: GRID_STOPS[col]!, y: GRID_STOPS[row]! },
+    });
+  }
+
+  function toggleRelativeSize() {
+    editor.updateConfig({ relativeSize: editor.config.relativeSize !== true });
+  }
+
+  // Restablece TODA la configuracion a los defaults (limpia imagen y posicion
+  // manual; no toca archivos ni procesamiento). Facil de rehacer: sin confirm.
+  function resetConfig() {
+    editor.resetConfig();
+  }
+
+  // Presets guardados en localStorage (subset de estilo de la config, sin
+  // imagen ni posicion; ver lib/presets).
+  let presetName = $state("");
+  let savedPresets = $state<SavedPreset[]>(listPresets());
+
+  function onSavePreset() {
+    const name = presetName.trim();
+    if (name.length === 0) return;
+    savedPresets = savePreset(name, editor.config);
+    presetName = "";
+  }
+
+  function applyPreset(preset: SavedPreset) {
+    // Conservamos la imagen actual (los presets no guardan imageDataUrl) y
+    // limpiamos la posicion manual para que el preset mande de verdad.
+    editor.updateConfig({ ...preset.config, customPosition: null });
+  }
+
+  function onDeletePreset(name: string) {
+    savedPresets = deletePreset(name);
   }
 
   function setMode(mode: WatermarkMode) {
@@ -181,6 +322,9 @@
     if (warnings.includes("invalid-length")) {
       out.push({ kind: "warn", text: t("batch.errorInvalidLength", lang) });
     }
+    if (!editor.batchState.names.every(isWinAnsiEncodable)) {
+      out.push({ kind: "error", text: t("errors.textNotEncodable", lang) });
+    }
     return out;
   });
 
@@ -223,7 +367,20 @@
           imageError = t("controls.imageInvalid", lang);
           return;
         }
-        editor.setWatermarkImage(dataUrl);
+        // pdf-lib solo embebe PNG y JPEG: cualquier formato no-PNG (WebP) se
+        // transcodifica a PNG aqui, al subirlo, y el motor siempre recibe PNG.
+        if (file.type === "image/png") {
+          imageName = file.name;
+          editor.setWatermarkImage(dataUrl);
+          return;
+        }
+        const pngDataUrl = transcodeToPngDataUrl(img);
+        if (!pngDataUrl) {
+          imageError = t("controls.imageInvalid", lang);
+          return;
+        }
+        imageName = file.name;
+        editor.setWatermarkImage(pngDataUrl);
       };
       img.onerror = () => {
         imageError = t("controls.imageInvalid", lang);
@@ -236,8 +393,26 @@
     reader.readAsDataURL(file);
   }
 
+  // Rasteriza la imagen ya cargada en un canvas y la reexporta como data URL
+  // PNG. Devuelve null si el navegador no puede completar la conversion
+  // (sin contexto 2D, imagen corrupta, etc.); el caller muestra el error.
+  function transcodeToPngDataUrl(img: HTMLImageElement): string | null {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0);
+      return canvas.toDataURL("image/png");
+    } catch {
+      return null;
+    }
+  }
+
   function removeImage() {
     editor.setWatermarkImage(null);
+    imageName = null;
     imageError = null;
   }
 </script>
@@ -348,9 +523,21 @@
   {:else if watermarkMode === "image"}
     <fieldset>
       <label for="wm-image" class="legend">{t("controls.imageUpload", lang)}</label>
+      <div class="file-row">
+        <button
+          type="button"
+          class="brut-btn small"
+          onclick={() => imageInputEl?.click()}
+          disabled={editor.isProcessing}
+        >
+          {t("controls.imageChoose", lang)}
+        </button>
+        <span class="file-name" title={imageName ?? undefined}>{imageFileLabel}</span>
+      </div>
       <input
+        bind:this={imageInputEl}
         id="wm-image"
-        class="brut-input"
+        class="file-hidden"
         type="file"
         accept="image/png,image/webp"
         onchange={onImageChange}
@@ -381,20 +568,27 @@
   {:else}
     <fieldset>
       <label for="wm-text">{t("controls.textLabel", lang)}</label>
-      <input
+      <textarea
         id="wm-text"
-        class="brut-input"
-        type="text"
+        class="brut-input text-textarea"
+        rows="2"
         maxlength={LIMITS.MAX_TEXT_LENGTH}
         placeholder={t("controls.textPlaceholder", lang)}
         value={editor.config.text}
         oninput={setText}
-        class:invalid={editor.config.text.trim().length === 0}
+        class:invalid={editor.config.text.trim().length === 0 || !textEncodable || tooManyLines}
         disabled={editor.isProcessing}
-      />
+      ></textarea>
       <div class="counter" aria-live="polite">
         {editor.config.text.length}/{LIMITS.MAX_TEXT_LENGTH}
       </div>
+      <p class="hint">{t("controls.textVariablesHint", lang)}</p>
+      {#if !textEncodable}
+        <p class="invalid-msg" role="alert">{t("errors.textNotEncodable", lang)}</p>
+      {/if}
+      {#if tooManyLines}
+        <p class="invalid-msg" role="alert">{t("errors.tooManyLines", lang)}</p>
+      {/if}
     </fieldset>
 
     <fieldset>
@@ -417,17 +611,70 @@
   {/if}
 
   <fieldset>
-    <label for="wm-size">{t("controls.size", lang)}: <span class="value">{editor.config.fontSize}px</span></label>
-    <input
-      id="wm-size"
-      type="range"
-      min={LIMITS.MIN_FONT_SIZE}
-      max={LIMITS.MAX_FONT_SIZE}
-      step="1"
-      value={editor.config.fontSize}
-      oninput={setFontSize}
-      disabled={editor.isProcessing}
-    />
+    {#if watermarkMode === "image"}
+      <label for="wm-size">{sizeLabel}: <span class="value">{imageScaleValue}%</span></label>
+      <div class="row">
+        <input
+          id="wm-size"
+          type="range"
+          min={LIMITS.MIN_IMAGE_SCALE}
+          max={LIMITS.MAX_IMAGE_SCALE}
+          step="1"
+          value={imageScaleValue}
+          oninput={setImageScale}
+          disabled={editor.isProcessing}
+        />
+        <input
+          class="brut-input num"
+          type="number"
+          aria-label={sizeLabel}
+          min={LIMITS.MIN_IMAGE_SCALE}
+          max={LIMITS.MAX_IMAGE_SCALE}
+          step="1"
+          value={imageScaleValue}
+          onchange={setImageScaleNumber}
+          disabled={editor.isProcessing}
+        />
+      </div>
+    {:else}
+      <label for="wm-size">{sizeLabel}: <span class="value">{editor.config.fontSize}px</span></label>
+      <div class="row">
+        <input
+          id="wm-size"
+          type="range"
+          min={LIMITS.MIN_FONT_SIZE}
+          max={LIMITS.MAX_FONT_SIZE}
+          step="1"
+          value={editor.config.fontSize}
+          oninput={setFontSize}
+          disabled={editor.isProcessing}
+        />
+        <input
+          class="brut-input num"
+          type="number"
+          aria-label={sizeLabel}
+          min={LIMITS.MIN_FONT_SIZE}
+          max={LIMITS.MAX_FONT_SIZE}
+          step="1"
+          value={editor.config.fontSize}
+          onchange={setFontSizeNumber}
+          disabled={editor.isProcessing}
+        />
+      </div>
+      <div class="row">
+        <button
+          type="button"
+          class="brut-btn small"
+          aria-pressed={editor.config.relativeSize === true}
+          data-active={editor.config.relativeSize === true}
+          onclick={toggleRelativeSize}
+          disabled={editor.isProcessing}
+        >
+          {t("controls.relativeSize", lang)}
+        </button>
+      </div>
+      <p class="hint">{t("controls.relativeSizeHint", lang)}</p>
+    {/if}
   </fieldset>
 
   {#if watermarkMode === "text" || watermarkMode === "batch"}
@@ -461,16 +708,29 @@
     <label for="wm-opacity">
       {t("controls.opacity", lang)}: <span class="value">{Math.round(editor.config.opacity * 100)}%</span>
     </label>
-    <input
-      id="wm-opacity"
-      type="range"
-      min={LIMITS.MIN_OPACITY}
-      max={LIMITS.MAX_OPACITY}
-      step="0.05"
-      value={editor.config.opacity}
-      oninput={setOpacity}
-      disabled={editor.isProcessing}
-    />
+    <div class="row">
+      <input
+        id="wm-opacity"
+        type="range"
+        min={LIMITS.MIN_OPACITY}
+        max={LIMITS.MAX_OPACITY}
+        step="0.05"
+        value={editor.config.opacity}
+        oninput={setOpacity}
+        disabled={editor.isProcessing}
+      />
+      <input
+        class="brut-input num"
+        type="number"
+        aria-label={t("controls.opacity", lang)}
+        min={LIMITS.MIN_OPACITY * 100}
+        max={LIMITS.MAX_OPACITY * 100}
+        step="5"
+        value={Math.round(editor.config.opacity * 100)}
+        onchange={setOpacityPercent}
+        disabled={editor.isProcessing}
+      />
+    </div>
   </fieldset>
 
   <fieldset>
@@ -483,15 +743,29 @@
         type="range"
         min={LIMITS.MIN_ROTATION}
         max={LIMITS.MAX_ROTATION}
-        step="1"
+        step="5"
         value={editor.config.rotation}
         oninput={setRotation}
-        disabled={editor.isProcessing}
+        disabled={rotationDisabled}
       />
-      <button class="brut-btn small" type="button" onclick={resetRotation} disabled={editor.isProcessing}>
+      <input
+        class="brut-input num"
+        type="number"
+        aria-label={t("controls.rotation", lang)}
+        min={LIMITS.MIN_ROTATION}
+        max={LIMITS.MAX_ROTATION}
+        step="1"
+        value={editor.config.rotation}
+        onchange={setRotationNumber}
+        disabled={rotationDisabled}
+      />
+      <button class="brut-btn small" type="button" onclick={resetRotation} disabled={rotationDisabled}>
         {t("controls.resetRotation", lang)}
       </button>
     </div>
+    {#if editor.config.pattern === "spiral"}
+      <p class="hint">{t("controls.rotationIgnoredSpiral", lang)}</p>
+    {/if}
   </fieldset>
 
   <fieldset>
@@ -533,6 +807,29 @@
     </div>
   </fieldset>
 
+  {#if editor.config.pattern === "single-center"}
+    <fieldset>
+      <legend class="legend">{t("controls.positionLegend", lang)}</legend>
+      <div class="position-grid" role="radiogroup" aria-label={t("controls.positionLegend", lang)}>
+        {#each GRID_STOPS as y, row (y)}
+          {#each GRID_STOPS as x, col (x)}
+            <button
+              type="button"
+              class="brut-btn pos-cell"
+              aria-pressed={activeGridCell.row === row && activeGridCell.col === col}
+              data-active={activeGridCell.row === row && activeGridCell.col === col}
+              aria-label={t(GRID_POSITION_KEYS[row]![col]!, lang)}
+              onclick={() => setGridPosition(row, col)}
+              disabled={editor.isProcessing}
+            >
+              <span class="pos-dot" aria-hidden="true"></span>
+            </button>
+          {/each}
+        {/each}
+      </div>
+    </fieldset>
+  {/if}
+
   {#if showResetCustomPosition}
     <fieldset>
       <p class="hint">{t("controls.resetCustomPositionHint", lang)}</p>
@@ -550,23 +847,90 @@
   {#if densityVisible}
     <fieldset>
       <label for="wm-density">{t("controls.density", lang)}: <span class="value">{editor.config.density}</span></label>
-      <input
-        id="wm-density"
-        type="range"
-        min={LIMITS.MIN_DENSITY}
-        max={LIMITS.MAX_DENSITY}
-        step="1"
-        value={editor.config.density}
-        oninput={setDensity}
-        disabled={editor.isProcessing}
-      />
+      <div class="row">
+        <input
+          id="wm-density"
+          type="range"
+          min={LIMITS.MIN_DENSITY}
+          max={LIMITS.MAX_DENSITY}
+          step="1"
+          value={editor.config.density}
+          oninput={setDensity}
+          disabled={editor.isProcessing}
+        />
+        <input
+          class="brut-input num"
+          type="number"
+          aria-label={t("controls.density", lang)}
+          min={LIMITS.MIN_DENSITY}
+          max={LIMITS.MAX_DENSITY}
+          step="1"
+          value={editor.config.density}
+          onchange={setDensityNumber}
+          disabled={editor.isProcessing}
+        />
+      </div>
     </fieldset>
   {/if}
 
+  <fieldset>
+    <legend class="legend">{t("presets.legend", lang)}</legend>
+    <div class="row preset-actions">
+      <input
+        class="brut-input preset-name"
+        type="text"
+        placeholder={t("presets.namePlaceholder", lang)}
+        aria-label={t("presets.namePlaceholder", lang)}
+        maxlength="40"
+        bind:value={presetName}
+        disabled={editor.isProcessing}
+      />
+      <button
+        type="button"
+        class="brut-btn small"
+        onclick={onSavePreset}
+        disabled={editor.isProcessing || presetName.trim().length === 0}
+      >
+        {t("presets.save", lang)}
+      </button>
+    </div>
+    {#if savedPresets.length > 0}
+      <ul class="preset-list">
+        {#each savedPresets as preset (preset.name)}
+          <li class="preset-row">
+            <span class="preset-label" title={preset.name}>{preset.name}</span>
+            <button
+              type="button"
+              class="brut-btn small"
+              onclick={() => applyPreset(preset)}
+              disabled={editor.isProcessing}
+            >
+              {t("presets.apply", lang)}
+            </button>
+            <button
+              type="button"
+              class="brut-btn small"
+              aria-label={`${t("presets.delete", lang)} ${preset.name}`}
+              onclick={() => onDeletePreset(preset.name)}
+              disabled={editor.isProcessing}
+            >
+              ✕
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </fieldset>
+
   <fieldset class="storage-row">
-    <button class="brut-btn small" type="button" onclick={clearStorage} disabled={editor.isProcessing}>
-      {t("controls.clearStorage", lang)}
-    </button>
+    <div class="row">
+      <button class="brut-btn small" type="button" onclick={resetConfig} disabled={editor.isProcessing}>
+        {t("controls.reset", lang)}
+      </button>
+      <button class="brut-btn small" type="button" onclick={clearStorage} disabled={editor.isProcessing}>
+        {t("controls.clearStorage", lang)}
+      </button>
+    </div>
   </fieldset>
 </aside>
 
@@ -587,6 +951,13 @@
     overflow-x: hidden;
     box-sizing: border-box;
   }
+  /* Por debajo de 1024px la columna de controles pasa a ocupar todo el ancho. */
+  @media (max-width: 1023px) {
+    .controls {
+      width: 100%;
+      max-height: none;
+    }
+  }
   h3 {
     font-size: var(--text-h2);
     margin: 0 0 var(--space-2) 0;
@@ -598,6 +969,12 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    /* Blink da a fieldset min-inline-size: min-content en la hoja UA: con un
+       input de texto dentro (ancho intrinseco por size=20) el fieldset se
+       negaba a encoger y desbordaba el panel. Lo anulamos; la cadena de
+       min-width: 0 (fieldset -> .preset-actions -> .preset-name) permite que
+       sea el input quien se encoja. */
+    min-width: 0;
   }
   legend.legend {
     float: none;
@@ -665,9 +1042,85 @@
     font-size: var(--text-tiny);
     color: var(--ink-muted);
   }
-  input.invalid {
+  input.invalid,
+  textarea.invalid {
     border-color: var(--danger);
     background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  }
+  .text-textarea {
+    width: 100%;
+    resize: vertical;
+    box-sizing: border-box;
+    font-family: inherit;
+    line-height: 1.3;
+  }
+  .num {
+    width: 76px;
+    flex-shrink: 0;
+    padding: var(--space-1) var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    text-align: right;
+    border-radius: var(--radius-sm);
+  }
+  .position-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-1);
+    width: fit-content;
+  }
+  .pos-cell {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+  }
+  .pos-dot {
+    display: block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--ink);
+  }
+  .preset-name {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-small);
+  }
+  /* La fila es un flex item del fieldset: sin min-width: 0 su minimo automatico
+     es el min-content (el ancho intrinseco del input, ~250 px por size=20) y
+     empujaba el fieldset 35 px fuera del panel. Con 0 la fila acepta el ancho
+     del panel y el input (min-width: 0 propio) es quien se encoge. */
+  .preset-actions {
+    min-width: 0;
+  }
+  .preset-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .preset-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .preset-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-small);
+    font-weight: 700;
   }
   input[type="range"] {
     width: 100%;
@@ -685,10 +1138,33 @@
     align-items: center;
     gap: var(--space-3);
   }
-  /* Input file ocupa el 100% del fieldset para no desbordar la columna. */
-  input[type="file"] {
-    max-width: 100%;
-    box-sizing: border-box;
+  /* Selector de imagen de marca: el input nativo se oculta (su boton + texto
+     "Ningun archivo..." desbordaba la columna) y se sustituye por un boton
+     brutalista y el nombre truncado con elipsis. El input sigue accesible
+     para lectores de pantalla con la tecnica visually-hidden. */
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-small);
+    color: var(--ink-muted);
+  }
+  .file-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .image-preview-row {
     flex-wrap: wrap;
@@ -711,7 +1187,7 @@
   }
   .invalid-msg {
     margin: 0;
-    color: var(--danger);
+    color: var(--danger-text);
     font-weight: 700;
     font-size: var(--text-small);
   }

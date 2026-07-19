@@ -57,4 +57,86 @@ describe("storage de WatermarkConfig", () => {
     expect(loaded?.text).toBe("Mini");
     expect(loaded?.fontSize).toBe(DEFAULT_CONFIG.fontSize);
   });
+
+  it("descarta una config con density gigante (colgaria la espiral)", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x", pattern: "spiral" };
+    const raw = JSON.stringify(config).replace('"density":4', '"density":1000000000');
+    localStorage.setItem(STORAGE_KEY, raw);
+    expect(loadConfigFromStorage()).toBeNull();
+  });
+
+  it("descarta una config con Infinity (JSON.parse de 1e999 da Infinity, que es typeof number)", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x", pattern: "diagonal" };
+    const raw = JSON.stringify(config).replace('"density":4', '"density":1e999');
+    localStorage.setItem(STORAGE_KEY, raw);
+    expect(loadConfigFromStorage()).toBeNull();
+  });
+
+  it("descarta una config con fontSize fuera de rango", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x", fontSize: 121 };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    expect(loadConfigFromStorage()).toBeNull();
+  });
+
+  it("descarta una config con customPosition no finita o fuera de [0, 1]", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x" };
+    const rawInfinity = JSON.stringify(config).replace(
+      '"fontSize":48',
+      '"fontSize":48,"customPosition":{"x":1e999,"y":0.5}',
+    );
+    localStorage.setItem(STORAGE_KEY, rawInfinity);
+    expect(loadConfigFromStorage()).toBeNull();
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...config, customPosition: { x: 2, y: 0.5 } }),
+    );
+    expect(loadConfigFromStorage()).toBeNull();
+  });
+
+  it("conserva una config valida con customPosition dentro de [0, 1]", () => {
+    const config: WatermarkConfig = {
+      ...DEFAULT_CONFIG,
+      text: "x",
+      customPosition: { x: 0.25, y: 0.75 },
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    expect(loadConfigFromStorage()).toEqual(config);
+  });
+
+  it("tolera density fuera de rango si el patron no la usa (misma regla que validateConfig)", () => {
+    const config: WatermarkConfig = {
+      ...DEFAULT_CONFIG,
+      text: "x",
+      pattern: "single-center",
+      density: 99,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    expect(loadConfigFromStorage()).toEqual(config);
+  });
+
+  it("carga una config con relativeSize: true", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x", relativeSize: true };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    expect(loadConfigFromStorage()).toEqual(config);
+  });
+
+  it("tolera la ausencia de relativeSize (configs antiguas) y cae al default", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x" };
+    // Simulamos una config guardada antes de que existiera el campo.
+    const raw = JSON.stringify(config).replace(',"relativeSize":false', "");
+    expect(raw).not.toContain("relativeSize");
+    localStorage.setItem(STORAGE_KEY, raw);
+    expect(loadConfigFromStorage()).toEqual({ ...config, relativeSize: false });
+  });
+
+  it("descarta una config con relativeSize que no es booleano", () => {
+    const config: WatermarkConfig = { ...DEFAULT_CONFIG, text: "x" };
+    const raw = JSON.stringify(config).replace(
+      '"relativeSize":false',
+      '"relativeSize":"si"',
+    );
+    localStorage.setItem(STORAGE_KEY, raw);
+    expect(loadConfigFromStorage()).toBeNull();
+  });
 });

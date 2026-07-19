@@ -67,4 +67,27 @@ describe("buildZipBlob", () => {
     const names = Object.keys(zip.files);
     expect(names).toEqual(["ok-watermarked.png"]);
   });
+
+  it("deduplica nombres de salida repetidos sufijando -2 antes de la extension", async () => {
+    // Dos entradas que producen el mismo nombre de salida: sin dedupe, JSZip
+    // sobrescribiria la primera en silencio y se perderia un resultado.
+    const items = [
+      makeItem("a.png", "image/png", "uno"),
+      makeItem("a.png", "image/png", "dos"),
+      makeItem("a.png", "image/png", "tres"),
+    ];
+    const blob = await buildZipBlob(items);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const names = Object.keys(zip.files).sort();
+    expect(names).toEqual([
+      "a-watermarked-2.png",
+      "a-watermarked-3.png",
+      "a-watermarked.png",
+    ]);
+    // Cada entrada conserva su propio contenido: ninguna se pierde.
+    const first = await zip.file("a-watermarked.png")!.async("string");
+    const second = await zip.file("a-watermarked-2.png")!.async("string");
+    expect(first).toBe("uno-watermarked");
+    expect(second).toBe("dos-watermarked");
+  });
 });

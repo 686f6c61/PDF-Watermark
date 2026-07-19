@@ -52,11 +52,30 @@ function todayStamp(date: Date = new Date()): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// Dos entradas pueden producir el mismo nombre de salida (p. ej. "a.png" y
+// "a.jpg" si ambas salen como PNG, o nombres base identicos): JSZip
+// sobrescribiria la entrada anterior en silencio. Sufijamos `-2`, `-3`...
+// antes de la extension para que ningun resultado se pierda.
+function dedupeZipName(name: string, used: Set<string>): string {
+  const dot = name.lastIndexOf(".");
+  const base = dot === -1 ? name : name.slice(0, dot);
+  const ext = dot === -1 ? "" : name.slice(dot);
+  let candidate = name;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${suffix}${ext}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
 export async function buildZipBlob(items: FileItem[]): Promise<Blob> {
   const zip = new JSZip();
+  const usedNames = new Set<string>();
   for (const item of items) {
     if (!item.resultBlob) continue;
-    const name = buildOutputName(item);
+    const name = dedupeZipName(buildOutputName(item), usedNames);
     zip.file(name, item.resultBlob);
   }
   return zip.generateAsync({ type: "blob" });

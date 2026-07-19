@@ -81,52 +81,75 @@
 
   <ul class="promises" aria-label={t("howItWorks.promisesAria", lang)}>
     <li>
-      <span class="badge badge-pink" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 10h-1.26A8 8 0 1 0 9 20" />
-          <polyline points="16 16 20 20 16 24" />
-          <line x1="20" y1="20" x2="4" y2="20" />
-        </svg>
-      </span>
-      <div>
+      <div class="head">
+        <span class="badge badge-pink" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20" />
+            <polyline points="16 16 20 20 16 24" />
+            <line x1="20" y1="20" x2="4" y2="20" />
+          </svg>
+        </span>
         <strong>{t("howItWorks.promise1Title", lang)}</strong>
-        <p>{t("howItWorks.promise1Body", lang)}</p>
       </div>
+      <p>{t("howItWorks.promise1Body", lang)}</p>
     </li>
     <li>
-      <span class="badge badge-lavender" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9" />
-          <line x1="5" y1="5" x2="19" y2="19" />
-        </svg>
-      </span>
-      <div>
+      <div class="head">
+        <span class="badge badge-lavender" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <line x1="5" y1="5" x2="19" y2="19" />
+          </svg>
+        </span>
         <strong>{t("howItWorks.promise2Title", lang)}</strong>
-        <p>{t("howItWorks.promise2Body", lang)}</p>
       </div>
+      <p>{t("howItWorks.promise2Body", lang)}</p>
     </li>
     <li>
-      <span class="badge badge-peach" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
-      </span>
-      <div>
+      <div class="head">
+        <span class="badge badge-peach" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </span>
         <strong>{t("howItWorks.promise3Title", lang)}</strong>
-        <p>{t("howItWorks.promise3Body", lang)}</p>
       </div>
+      <p>{t("howItWorks.promise3Body", lang)}</p>
     </li>
     <li>
-      <span class="badge badge-lime" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      </span>
-      <div>
+      <div class="head">
+        <span class="badge badge-lime" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </span>
         <strong>{t("howItWorks.promise4Title", lang)}</strong>
-        <p>{t("howItWorks.promise4Body", lang)}</p>
       </div>
+      <p>{t("howItWorks.promise4Body", lang)}</p>
+    </li>
+    <li>
+      <div class="head">
+        <span class="badge badge-sky" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z" />
+          </svg>
+        </span>
+        <strong>{t("howItWorks.promise5Title", lang)}</strong>
+      </div>
+      <p>{t("howItWorks.promise5Body", lang)}</p>
+    </li>
+    <li>
+      <div class="head">
+        <span class="badge badge-yellow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="8 6 2 12 8 18" />
+            <polyline points="16 6 22 12 16 18" />
+          </svg>
+        </span>
+        <strong>{t("howItWorks.promise6Title", lang)}</strong>
+      </div>
+      <p>{t("howItWorks.promise6Body", lang)}</p>
     </li>
   </ul>
 </section>
@@ -186,23 +209,35 @@
     padding: 0;
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    /* 3x2 en escritorio (la seccion mide ~860px utiles), 2 columnas en
+       tablet y 1 en movil: con auto-fit y 260px de minimo las seis
+       tarjetas siempre rellenan filas completas, sin huecos huerfanos. */
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: var(--space-3);
   }
   .promises li {
     display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
+    flex-direction: column;
+    gap: var(--space-2);
     padding: var(--space-3);
     background: var(--bg);
     border: var(--border-thin);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-default);
+    /* La seccion hero tiene text-align: center y se heredaba: las
+       tarjetas con textos de distinta longitud quedaban descompensadas. */
+    text-align: start;
+  }
+  /* Cabecera de tarjeta: badge y titulo en fila y centrados entre si;
+     el cuerpo va debajo a todo el ancho. Asi todas las tarjetas guardan
+     el mismo ritmo aunque un titulo ocupe dos lineas. */
+  .promises .head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
   .promises strong {
-    display: block;
     font-weight: 800;
-    margin-bottom: var(--space-1);
     line-height: 1.2;
   }
   .promises p {
@@ -233,5 +268,11 @@
   }
   .badge-lime {
     background: var(--accent-lime);
+  }
+  .badge-sky {
+    background: var(--accent-sky);
+  }
+  .badge-yellow {
+    background: var(--accent-yellow);
   }
 </style>

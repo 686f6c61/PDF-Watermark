@@ -1,0 +1,271 @@
+---
+import { t, type Lang } from "../i18n/t";
+import CookieBanner from "../components/CookieBanner.svelte";
+import SiteHeader from "./SiteHeader.astro";
+import SiteFooter from "./SiteFooter.astro";
+import "../styles/global.css";
+
+/**
+ * Layout compartido de las 4 paginas (ES/EN x index/privacidad).
+ *
+ * Centraliza el <head> (SEO, hreflang, OG/Twitter, gtag), el header, el
+ * footer, los estilos comunes y los scripts estaticos de /js/ para que las
+ * paginas gemelas no vuelvan a divergir. El contenido propio de cada pagina
+ * entra por el <slot />.
+ */
+
+interface Props {
+  lang: Lang;
+  title: string;
+  description: string;
+  /** Ruta canonica de la pagina, p.ej. "/" o "/en/privacy/". */
+  canonicalPath: string;
+  /** Rutas de cada idioma para los hreflang reciprocos (x-default = es). */
+  alternatePaths: { es: string; en: string };
+  /** Meta keywords (solo index). */
+  keywords?: string;
+  ogType?: "website" | "article";
+  ogTitle?: string;
+  ogDescription?: string;
+  twitterDescription?: string;
+  /** Alt de la imagen OG; por defecto el texto i18n generico de la marca. */
+  ogImageAlt?: string;
+  /** Meta author "PDF Watermark" (solo index). */
+  withAuthor?: boolean;
+  /** Link al sitemap (solo index). */
+  withSitemapLink?: boolean;
+  /** Meta de verificacion de Google Search Console (solo index). */
+  withSiteVerification?: boolean;
+  /** Badge de procesamiento local en el header (solo index). */
+  withPrivacyBadge?: boolean;
+  /** Redirect por idioma en primera visita (solo index ES). */
+  withLangRedirect?: boolean;
+  /** Registro del service worker (solo index). */
+  withServiceWorker?: boolean;
+  /** JSON-LD de Schema.org opcional (WebApplication en los index). */
+  jsonLd?: Record<string, unknown>;
+}
+
+const {
+  lang,
+  title,
+  description,
+  canonicalPath,
+  alternatePaths,
+  keywords,
+  ogType = "website",
+  ogTitle = title,
+  ogDescription = description,
+  twitterDescription,
+  ogImageAlt = t("meta.ogImageAlt", lang),
+  withAuthor = false,
+  withSitemapLink = false,
+  withSiteVerification = false,
+  withPrivacyBadge = false,
+  withLangRedirect = false,
+  withServiceWorker = false,
+  jsonLd,
+} = Astro.props;
+
+const SITE_URL = "https://pdf-watermark.686f6c61.dev";
+const canonicalUrl = `${SITE_URL}${canonicalPath}`;
+const esUrl = `${SITE_URL}${alternatePaths.es}`;
+const enUrl = `${SITE_URL}${alternatePaths.en}`;
+const ogLocaleAlternate = lang === "es" ? "en_US" : "es_ES";
+const twitterText = twitterDescription ?? ogDescription;
+// Imagen OG por idioma: la ES es la historica /og-image.png (ya cacheada por
+// los crawlers); la EN es la variante generada por scripts/generate-og.mjs.
+const ogImageUrl = `${SITE_URL}${lang === "es" ? "/og-image.png" : "/og-image-en.png"}`;
+---
+
+<!doctype html>
+<html lang={t("meta.htmlLang", lang)}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#FFF8E7" />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {keywords && <meta name="keywords" content={keywords} />}
+    {withAuthor && <meta name="author" content="PDF Watermark" />}
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href={canonicalUrl} />
+
+    <!-- Alternates hreflang para SEO multilingüe -->
+    <link rel="alternate" hreflang="es" href={esUrl} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="x-default" href={esUrl} />
+
+    <!-- Favicon e iconos -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!-- PWA: manifiesto e instalacion en escritorio/movil -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Open Graph / Facebook / WhatsApp / LinkedIn -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content="PDF Watermark" />
+    <meta property="og:locale" content={t("meta.ogLocale", lang)} />
+    <meta property="og:locale:alternate" content={ogLocaleAlternate} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={ogDescription} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={ogImageAlt} />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@686f6c61" />
+    <meta name="twitter:creator" content="@686f6c61" />
+    <meta name="twitter:title" content={ogTitle} />
+    <meta name="twitter:description" content={twitterText} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+
+    {withSitemapLink && <link rel="sitemap" type="application/xml" href="/sitemap.xml" />}
+
+    {withSiteVerification && (
+      <meta name="google-site-verification" content="SmBuD0MsgAZgjuPh-qcRw2hWjLmOTF1oceXqWKIqohA" />
+    )}
+
+    <!-- Consent Mode v2 + carga condicional de GA: el script de
+         googletagmanager.com solo se inyecta tras el consentimiento
+         (ver public/js/gtag-init.js). Sin consentimiento, cero peticiones
+         a terceros. -->
+    <script is:inline defer src="/js/gtag-init.js"></script>
+
+    {jsonLd && (
+      <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
+    )}
+
+    {withLangRedirect && (
+      <!-- Script clasico bloqueante a proposito: evita el flash de contenido
+           en castellano antes de redirigir a /en/ (mismo comportamiento que
+           el inline original). -->
+      <script is:inline src="/js/lang-redirect.js"></script>
+    )}
+  </head>
+  <body>
+    <SiteHeader lang={lang} withPrivacyBadge={withPrivacyBadge} />
+
+    <slot />
+
+    <SiteFooter lang={lang} />
+
+    <CookieBanner client:load {lang} />
+
+    <script>
+      import { initAnalytics } from "../lib/analytics";
+      import { reopenBanner } from "../components/CookieBanner.svelte";
+
+      initAnalytics();
+
+      // Conecta el boton "Configurar cookies" del footer con el banner.
+      document.querySelectorAll<HTMLButtonElement>("[data-cookie-settings]").forEach((btn) => {
+        btn.addEventListener("click", () => reopenBanner());
+      });
+    </script>
+
+    <!-- Preferencia de idioma segun la ruta visitada (las 4 paginas) -->
+    <script is:inline defer src="/js/lang-pref.js"></script>
+    {withServiceWorker && <script is:inline defer src="/js/sw-register.js"></script>}
+
+    <style is:global>
+      .page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-4) var(--space-5);
+        border-bottom: var(--border-thick);
+        background: var(--bg);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+      .header-right {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-3);
+        flex-wrap: wrap;
+      }
+      .brand {
+        font-family: var(--font-display);
+        font-weight: 800;
+        font-size: var(--text-h2);
+        color: var(--ink);
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      main {
+        min-height: calc(100vh - 200px);
+      }
+      .page-footer {
+        padding: var(--space-5);
+        text-align: center;
+        border-top: var(--border-thin);
+        color: var(--ink-muted);
+        font-size: var(--text-small);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-3);
+      }
+      .footer-links {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-3);
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .footer-links a {
+        color: inherit;
+        text-decoration: none;
+        font-weight: 600;
+        border-bottom: 2px solid transparent;
+      }
+      .footer-links a:hover {
+        border-bottom-color: var(--ink);
+      }
+      .footer-button {
+        background: transparent;
+        border: none;
+        color: inherit;
+        font-weight: 600;
+        font-size: inherit;
+        font-family: inherit;
+        padding: 0;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .footer-button:hover {
+        color: var(--ink);
+      }
+      .github-link {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        background: var(--surface);
+        border: var(--border-thin);
+        box-shadow: var(--shadow-default);
+        padding: var(--space-1) var(--space-3);
+        border-radius: var(--radius-sm);
+        color: var(--ink);
+        transition: transform var(--motion-hover), box-shadow var(--motion-hover);
+      }
+      .github-link:hover {
+        transform: translate(2px, 2px);
+        box-shadow: var(--shadow-hover);
+        border-bottom-color: transparent;
+      }
+    </style>
+  </body>
+</html>

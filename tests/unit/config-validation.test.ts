@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, type WatermarkConfig } from "../../src/lib/watermark/types";
-import { validateConfig } from "../../src/lib/state/validation";
+import { isWinAnsiEncodable, validateConfig } from "../../src/lib/state/validation";
 
 function configWith(overrides: Partial<WatermarkConfig>): WatermarkConfig {
   return { ...DEFAULT_CONFIG, text: "Confidencial", ...overrides };
@@ -172,6 +172,128 @@ describe("validateConfig", () => {
     it("ignora imageDataUrl si vale null o undefined (ningun error nuevo)", () => {
       expect(validateConfig(configWith({ imageDataUrl: null })).ok).toBe(true);
       expect(validateConfig(configWith({ imageDataUrl: undefined })).ok).toBe(true);
+    });
+  });
+
+  describe("texto codificable en WinAnsi (fuentes estandar de pdf-lib)", () => {
+    it("rechaza texto con emoji", () => {
+      const result = validateConfig(configWith({ text: "Confidencial 🔒" }));
+      expect(result.ok).toBe(false);
+      expect(result.errors.some((e) => e.field === "text")).toBe(true);
+    });
+
+    it("rechaza texto con caracteres CJK, cirilico o arabe", () => {
+      expect(validateConfig(configWith({ text: "机密" })).ok).toBe(false);
+      expect(validateConfig(configWith({ text: "Секретно" })).ok).toBe(false);
+      expect(validateConfig(configWith({ text: "سري" })).ok).toBe(false);
+    });
+
+    it("acepta tildes, ñ y simbolos Latin-1", () => {
+      expect(validateConfig(configWith({ text: "José Núñez — señoría ©" })).ok).toBe(true);
+    });
+
+    it("acepta los simbolos WinAnsi frecuentes fuera de Latin-1", () => {
+      expect(validateConfig(configWith({ text: "Precio 5€ • borrador – ok — “si” … ™" })).ok).toBe(
+        true,
+      );
+    });
+
+    it("la regla no aplica cuando el texto esta vacio y hay imagen", () => {
+      const result = validateConfig(
+        configWith({ text: "", imageDataUrl: "data:image/png;base64,iVBORw0KGgo=" }),
+      );
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe("isWinAnsiEncodable", () => {
+    it("acepta ASCII imprimible y Latin-1", () => {
+      expect(isWinAnsiEncodable("Confidencial")).toBe(true);
+      expect(isWinAnsiEncodable("ñÑ áéíóú üÜ çÇ ¿? ¡!")).toBe(true);
+    });
+
+    it("rechaza emoji y alfabetos no latinos", () => {
+      expect(isWinAnsiEncodable("a😀b")).toBe(false);
+      expect(isWinAnsiEncodable("日本語")).toBe(false);
+    });
+
+    it("rechaza caracteres de control distintos del salto de linea", () => {
+      expect(isWinAnsiEncodable("con\ttabulador")).toBe(false);
+      expect(isWinAnsiEncodable("con\rcarriage")).toBe(false);
+    });
+
+    it("acepta el salto de linea como separador (texto multi-linea)", () => {
+      expect(isWinAnsiEncodable("con\nsalto")).toBe(true);
+    });
+  });
+
+  describe("texto multi-linea", () => {
+    it("acepta dos lineas sencillas", () => {
+      expect(validateConfig(configWith({ text: "LINEA1\nLINEA2" })).ok).toBe(true);
+    });
+
+    it("acepta tildes y ñ repartidas en varias lineas", () => {
+      expect(validateConfig(configWith({ text: "José\nNúñez\nseñoría" })).ok).toBe(true);
+    });
+
+    it("acepta exactamente 3 lineas", () => {
+      expect(validateConfig(configWith({ text: "a\nb\nc" })).ok).toBe(true);
+    });
+
+    it("rechaza 4 lineas con el error tooManyLines", () => {
+      const result = validateConfig(configWith({ text: "a\nb\nc\nd" }));
+      expect(result.ok).toBe(false);
+      expect(
+        result.errors.some((e) => e.field === "text" && e.code === "tooManyLines"),
+      ).toBe(true);
+    });
+
+    it("rechaza un emoji aunque este solo en una de las lineas", () => {
+      const result = validateConfig(configWith({ text: "linea uno\n🔒" }));
+      expect(result.ok).toBe(false);
+      expect(
+        result.errors.some((e) => e.field === "text" && e.code !== "tooManyLines"),
+      ).toBe(true);
+    });
+
+    it("mantiene el limite de 60 caracteres totales contando los saltos", () => {
+      const result = validateConfig(
+        configWith({ text: `${"a".repeat(30)}\n${"b".repeat(31)}` }),
+      );
+      expect(result.ok).toBe(false);
+      expect(result.errors.some((e) => e.field === "text")).toBe(true);
+    });
+  });
+
+  describe("robustez numerica (NaN / Infinity / gigantes)", () => {
+    it("rechaza NaN en cualquier numerico aunque pase las comparaciones", () => {
+      expect(validateConfig(configWith({ fontSize: NaN })).ok).toBe(false);
+      expect(validateConfig(configWith({ opacity: NaN })).ok).toBe(false);
+      expect(validateConfig(configWith({ rotation: NaN })).ok).toBe(false);
+    });
+
+    it("rechaza densidad NaN incluso en patrones que ignoran la densidad", () => {
+      expect(validateConfig(configWith({ pattern: "single-center", density: NaN })).ok).toBe(false);
+    });
+
+    it("rechaza densidad gigante cuando el patron la usa", () => {
+      const result = validateConfig(configWith({ pattern: "spiral", density: 1e9 }));
+      expect(result.ok).toBe(false);
+      expect(result.errors.some((e) => e.field === "density")).toBe(true);
+    });
+
+    it("rechaza Infinity en fontSize", () => {
+      expect(validateConfig(configWith({ fontSize: Infinity })).ok).toBe(false);
+    });
+
+    it("rechaza customPosition con NaN o fuera de [0, 1]", () => {
+      expect(validateConfig(configWith({ customPosition: { x: NaN, y: 0.5 } })).ok).toBe(false);
+      expect(validateConfig(configWith({ customPosition: { x: 2, y: 0.5 } })).ok).toBe(false);
+      expect(validateConfig(configWith({ customPosition: { x: 0.5, y: -0.1 } })).ok).toBe(false);
+    });
+
+    it("acepta customPosition valida", () => {
+      expect(validateConfig(configWith({ customPosition: { x: 0.25, y: 0.75 } })).ok).toBe(true);
     });
   });
 });

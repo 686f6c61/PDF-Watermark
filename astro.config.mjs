@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   output: "static",
+  site: "https://pdf-watermark.686f6c61.dev",
   // i18n nativo de Astro 6: castellano por defecto sin prefijo (`/`,
   // `/privacidad/`); ingles bajo `/en/`. routing.prefixDefaultLocale a false
   // mantiene las URLs castellanas existentes y sus enlaces internos.

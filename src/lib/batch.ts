@@ -121,17 +121,25 @@ export function slugify(name: string): string {
  * Garantiza unicidad de slugs preservando el orden. Si un slug ya apareció,
  * se le añade sufijo `-2`, `-3`, etc. Los slugs vacíos se reemplazan por
  * `sin-nombre` antes de aplicar la misma lógica de deduplicación.
+ *
+ * El candidato se verifica contra TODOS los slugs ya emitidos (no solo contra
+ * el base): una entrada como "A 2" (slug "a-2") seguida de una segunda "A"
+ * colisionaria si solo contáramos repeticiones del base.
  */
 export function dedupeSlugs(slugs: string[]): string[] {
-  const counts = new Map<string, number>();
+  const used = new Set<string>();
   const result: string[] = [];
 
   for (const original of slugs) {
     const base = original.length > 0 ? original : "sin-nombre";
-    const previous = counts.get(base) ?? 0;
-    const next = previous + 1;
-    counts.set(base, next);
-    result.push(next === 1 ? base : `${base}-${next}`);
+    let candidate = base;
+    let suffix = 2;
+    while (used.has(candidate)) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(candidate);
+    result.push(candidate);
   }
 
   return result;

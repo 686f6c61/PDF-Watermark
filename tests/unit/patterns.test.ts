@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { computePositions, getRenderText } from "../../src/lib/watermark/patterns";
-import { DEFAULT_CONFIG, type WatermarkConfig } from "../../src/lib/watermark/types";
+import {
+  computePositions,
+  estimateTextWidth,
+  getRenderText,
+  resolveEffectiveFontSize,
+} from "../../src/lib/watermark/patterns";
+import {
+  DEFAULT_CONFIG,
+  REFERENCE_CANVAS_WIDTH,
+  type WatermarkConfig,
+} from "../../src/lib/watermark/types";
 
 function configWith(overrides: Partial<WatermarkConfig>): WatermarkConfig {
   return { ...DEFAULT_CONFIG, text: "Confidencial", ...overrides };
@@ -473,5 +482,169 @@ describe("computePositions", () => {
         computePositions(100, 100, configWith({ pattern: "diagonal", fontSize: 120 })),
       ).not.toThrow();
     });
+  });
+
+  // Marca de imagen: los motores pasan markSize (tamaño real ya escalado) y
+  // los patrones deben espaciar/anclar con el en lugar de la estimacion de
+  // texto (que en modo imagen esta vacia y colapsaba las celdas).
+  describe("con markSize (marca de imagen)", () => {
+    const mark = { width: 240, height: 59 }; // logo apaisado ya limitado al lienzo
+
+    it("corner ancla la marca completamente dentro del lienzo", () => {
+      const positions = computePositions(400, 400, configWith({ pattern: "corner" }), mark);
+      expect(positions).toHaveLength(1);
+      const p = positions[0]!;
+      expect(p.x + mark.width / 2).toBeLessThanOrEqual(400);
+      expect(p.y + mark.height / 2).toBeLessThanOrEqual(400);
+      expect(p.x - mark.width / 2).toBeGreaterThanOrEqual(0);
+      expect(p.y - mark.height / 2).toBeGreaterThanOrEqual(0);
+    });
+
+    it("diagonal genera muchas menos posiciones que con texto vacio (sin solape)", () => {
+      const config = configWith({ pattern: "diagonal", text: "", density: 4 });
+      const sinMark = computePositions(1200, 900, config);
+      const conMark = computePositions(1200, 900, config, mark);
+      expect(conMark.length).toBeGreaterThan(0);
+      expect(conMark.length).toBeLessThan(sinMark.length / 2);
+    });
+
+    it("diagonal deja entre dos marcas un hueco de una marca completa", () => {
+      // Sin rotacion, la rejilla es axis-aligned: dos marcas con la misma y
+      // se separan exactamente cellWidth = 2 * markWidth (entre dos logos
+      // siempre cabe un segundo logo, como el espacio entre palabras).
+      const config = configWith({ pattern: "diagonal", text: "", rotation: 0, density: 10 });
+      const positions = computePositions(1200, 900, config, mark);
+      const byRow = new Map<number, number[]>();
+      for (const p of positions) {
+        const ys = byRow.get(p.y) ?? [];
+        ys.push(p.x);
+        byRow.set(p.y, ys);
+      }
+      for (const xs of byRow.values()) {
+        xs.sort((a, b) => a - b);
+        for (let i = 1; i < xs.length; i += 1) {
+          expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(mark.width * 2);
+        }
+      }
+    });
+
+    it("espiral mantiene los centros dentro del lienzo y sin bucle infinito", () => {
+      const config = configWith({ pattern: "spiral", text: "", density: 6 });
+      const positions = computePositions(400, 400, config, mark);
+      expect(positions.length).toBeGreaterThan(0);
+      for (const p of positions) {
+        expect(p.x).toBeGreaterThanOrEqual(0);
+        expect(p.x).toBeLessThanOrEqual(400);
+        expect(p.y).toBeGreaterThanOrEqual(0);
+        expect(p.y).toBeLessThanOrEqual(400);
+      }
+    });
+
+    it("single-center ignora markSize (el centrado ya lo gestiona el motor)", () => {
+      const positions = computePositions(400, 400, configWith({ pattern: "single-center" }), mark);
+      expect(positions).toHaveLength(1);
+      expect(positions[0]!.x).toBe(200);
+      expect(positions[0]!.y).toBe(200);
+    });
+  });
+
+  describe("texto multi-linea", () => {
+    it("estimateTextWidth usa la linea mas larga", () => {
+      const fontSize = 48;
+      const width = estimateTextWidth("corta\nuna linea mucho mas larga", fontSize, "sans");
+      const longest = "una linea mucho mas larga".length;
+      expect(width).toBe((longest + 1) * fontSize * 0.55);
+    });
+
+    it("estimateTextWidth con una sola linea equivale al calculo clasico", () => {
+      expect(estimateTextWidth("AB", 48, "sans")).toBe((2 + 1) * 48 * 0.55);
+    });
+
+    it("diagonal separa mas las filas con varias lineas (la celda cubre el bloque)", () => {
+      const unaLinea = computePositions(
+        1500,
+        1700,
+        configWith({ pattern: "diagonal", density: 10, fontSize: 48, text: "MARCA" }),
+      );
+      const tresLineas = computePositions(
+        1500,
+        1700,
+        configWith({ pattern: "diagonal", density: 10, fontSize: 48, text: "MARCA\nMARCA\nMARCA" }),
+      );
+      expect(tresLineas.length).toBeGreaterThan(0);
+      expect(tresLineas.length).toBeLessThan(unaLinea.length);
+    });
+  });
+});
+
+describe("estimateTextWidth y la familia tipografica", () => {
+  it("mono (Courier) usa el avance monoespaciado exacto de 0.6em", () => {
+    const fontSize = 48;
+    expect(estimateTextWidth("AB", fontSize, "mono")).toBe((2 + 1) * fontSize * 0.6);
+  });
+
+  it("sans y serif usan el factor 0.55em", () => {
+    const fontSize = 48;
+    expect(estimateTextWidth("AB", fontSize, "sans")).toBe((2 + 1) * fontSize * 0.55);
+    expect(estimateTextWidth("AB", fontSize, "serif")).toBe((2 + 1) * fontSize * 0.55);
+  });
+
+  it("la separacion horizontal en diagonal con mono cubre text.length + 1 caracteres a 0.6em", () => {
+    const text = "AB";
+    const fontSize = 48;
+    const positions = computePositions(
+      2000,
+      2000,
+      configWith({ pattern: "diagonal", density: 10, fontSize, rotation: 0, text, fontFamily: "mono" }),
+    );
+    const rows = new Map<number, number[]>();
+    for (const p of positions) {
+      const key = Math.round(p.y);
+      const bucket = rows.get(key) ?? [];
+      bucket.push(p.x);
+      rows.set(key, bucket);
+    }
+    let minGap = Number.POSITIVE_INFINITY;
+    for (const xs of rows.values()) {
+      if (xs.length < 2) continue;
+      xs.sort((a, b) => a - b);
+      for (let i = 1; i < xs.length; i += 1) {
+        const gap = xs[i]! - xs[i - 1]!;
+        if (gap < minGap) minGap = gap;
+      }
+    }
+    const expectedMin = (text.length + 1) * fontSize * 0.6;
+    expect(minGap).toBeGreaterThanOrEqual(expectedMin);
+  });
+});
+
+describe("resolveEffectiveFontSize", () => {
+  it("con relativeSize false (u omitido) devuelve el fontSize configurado, identico", () => {
+    expect(resolveEffectiveFontSize(configWith({ fontSize: 48 }), 1190)).toBe(48);
+    expect(resolveEffectiveFontSize(configWith({ fontSize: 48, relativeSize: false }), 200)).toBe(
+      48,
+    );
+  });
+
+  it("con relativeSize true escala proporcionalmente al ancho del lienzo", () => {
+    const config = configWith({ fontSize: 48, relativeSize: true });
+    // El doble de ancho que la referencia => el doble de tamaño.
+    expect(resolveEffectiveFontSize(config, REFERENCE_CANVAS_WIDTH * 2)).toBe(96);
+    // La mitad de ancho => la mitad de tamaño.
+    expect(resolveEffectiveFontSize(config, REFERENCE_CANVAS_WIDTH / 2)).toBe(24);
+    // Sobre el propio lienzo de referencia, el tamaño es el configurado.
+    expect(resolveEffectiveFontSize(config, REFERENCE_CANVAS_WIDTH)).toBe(48);
+  });
+
+  it("acota el resultado a [1, 1000]", () => {
+    const config = configWith({ fontSize: 48, relativeSize: true });
+    expect(resolveEffectiveFontSize(config, 1)).toBe(1);
+    expect(resolveEffectiveFontSize(config, 1_000_000)).toBe(1000);
+  });
+
+  it("cae al fontSize absoluto si el ancho del lienzo no es finito", () => {
+    const config = configWith({ fontSize: 48, relativeSize: true });
+    expect(resolveEffectiveFontSize(config, NaN)).toBe(48);
+    expect(resolveEffectiveFontSize(config, Infinity)).toBe(48);
   });
 });

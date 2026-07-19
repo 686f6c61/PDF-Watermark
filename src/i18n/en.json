@@ -1,7 +1,7 @@
 {
   "meta": {
     "indexTitle": "PDF Watermark · Watermarks for PDFs and images 100% in your browser",
-    "indexDescription": "Protect your PDFs and images with custom watermarks. 100% browser processing, your files are never uploaded to any server. Four patterns, batch mode, before/after preview.",
+    "indexDescription": "Protect your PDFs and images with custom text or image watermarks. 100% browser processing, your files are never uploaded to any server. Four patterns, batch mode, before/after preview.",
     "indexKeywords": "watermarks, watermark, PDF, images, privacy, browser, serverless, GDPR, neobrutalism",
     "ogTitle": "PDF Watermark · Watermarks 100% in your browser",
     "ogDescription": "Protect your PDFs and images with custom watermarks. 100% local processing, your files are never uploaded to any server.",
@@ -22,7 +22,7 @@
   },
   "hero": {
     "title": "Protect your PDFs and images with watermarks",
-    "lead": "All processing happens in your browser. Your files are never uploaded to any server.",
+    "lead": "Use text or your own image (like your logo) as the watermark. All processing happens in your browser: your files are never uploaded to any server.",
     "screenAria": "Welcome screen"
   },
   "dropzone": {
@@ -30,7 +30,8 @@
     "title": "Drag your files here",
     "subtitle": "Or click to select them from your computer",
     "formats": "PDF, PNG, JPG, JPEG, WebP · up to 200 MB · max. 50 files",
-    "addMore": "Add more"
+    "addMore": "Add more",
+    "dismissError": "Dismiss notice"
   },
   "howItWorks": {
     "title": "How it works",
@@ -43,12 +44,16 @@
     "promisesAria": "What we don't do",
     "promise1Title": "No server uploads",
     "promise1Body": "Not ours, not anyone else's. Your file stays where it is.",
-    "promise2Title": "We don't measure your content. We only measure visits if you accept.",
-    "promise2Body": "Analytics load only with your explicit consent. Your files remain invisible to us.",
+    "promise2Title": "We don't measure your content",
+    "promise2Body": "We only measure visits if you accept. Analytics load only with your explicit consent. Your files remain invisible to us.",
     "promise3Title": "We don't see your content",
     "promise3Body": "We never know which file you upload or what's inside it. Impossible.",
     "promise4Title": "Works offline",
-    "promise4Body": "Once the page is loaded, you can disconnect from the Internet. The watermark is applied just the same."
+    "promise4Body": "Once the page is loaded, you can disconnect from the Internet. The watermark is applied just the same.",
+    "promise5Title": "Your files live in memory only",
+    "promise5Body": "They are processed in the browser's memory and downloaded straight back. No cache, no local storage, no history.",
+    "promise6Title": "Open source",
+    "promise6Body": "All the code is public on GitHub: you can review exactly what the page does before trusting it with your documents."
   },
   "privacyBadge": {
     "ariaLabel": "100% local processing. Your files never leave your browser.",
@@ -72,7 +77,9 @@
     "statusPending": "Pending",
     "statusProcessing": "Processing",
     "statusDone": "Done",
-    "statusError": "Error"
+    "statusError": "Error",
+    "removeAll": "Remove all",
+    "confirmRemoveAll": "Remove all files from the list? This action cannot be undone."
   },
   "controls": {
     "ariaLabel": "Watermark configuration",
@@ -82,6 +89,9 @@
     "modeBatch": "Batch",
     "modeAriaLabel": "Watermark type",
     "imageUpload": "Upload image (PNG or WebP, max 2 MB)",
+    "imageChoose": "Choose file",
+    "imageNone": "No file chosen",
+    "imageLoaded": "Image loaded",
     "imageRemove": "Remove image",
     "imagePreviewAlt": "Image watermark preview",
     "imageHint": "Use a transparent PNG for best results.",
@@ -94,9 +104,14 @@
     "fontSerif": "Serif",
     "fontMono": "Mono",
     "size": "Size",
+    "imageSize": "Image size",
+    "relativeSize": "Scale with canvas",
+    "relativeSizeHint": "Size adapts to each page or image width.",
+    "textVariablesHint": "Variables: {fecha}, {nombre}, {pagina}, {total}",
     "color": "Color",
     "opacity": "Opacity",
     "rotation": "Rotation",
+    "rotationIgnoredSpiral": "The spiral rotates each mark automatically.",
     "resetRotation": "Reset 0°",
     "patternLegend": "Pattern",
     "patternAria": "Layout pattern",
@@ -107,7 +122,18 @@
     "density": "Density",
     "clearStorage": "Clear saved configuration",
     "resetCustomPosition": "Reset to center",
-    "resetCustomPositionHint": "Watermark placed manually"
+    "resetCustomPositionHint": "Watermark placed manually",
+    "reset": "Reset",
+    "positionLegend": "Position",
+    "posTopLeft": "Top left",
+    "posTopCenter": "Top center",
+    "posTopRight": "Top right",
+    "posMiddleLeft": "Middle left",
+    "posCenter": "Center",
+    "posMiddleRight": "Middle right",
+    "posBottomLeft": "Bottom left",
+    "posBottomCenter": "Bottom center",
+    "posBottomRight": "Bottom right"
   },
   "batch": {
     "title": "Personalized watermark batch",
@@ -123,6 +149,13 @@
     "errorNoFiles": "Upload at least one PDF or image to use batch mode",
     "counter": "{count}/50 names",
     "processing": "Processing {current} of {total}"
+  },
+  "presets": {
+    "legend": "Presets",
+    "namePlaceholder": "Preset name",
+    "save": "Save",
+    "apply": "Apply",
+    "delete": "Delete"
   },
   "preview": {
     "ariaLabel": "Active file preview",
@@ -143,7 +176,12 @@
     "viewPage": "View page",
     "viewCurrent": ", current view",
     "markPage": "Mark page",
-    "unmarkPage": "Unmark page"
+    "unmarkPage": "Unmark page",
+    "rangeAria": "Page range",
+    "applyRange": "Apply",
+    "selectAll": "All",
+    "selectNone": "None",
+    "invalidRange": "Invalid range. Use numbers between 1 and the page count, in the format 1, 3-5, 8-."
   },
   "actions": {
     "applyDownload": "Apply and download",
@@ -152,6 +190,10 @@
     "filesPlural": "files",
     "processing": "Processing",
     "ready": "Done"
+  },
+  "action": {
+    "cancel": "Cancel",
+    "cancelling": "Cancelling…"
   },
   "errors": {
     "noPreview": "Select a file from the list",
@@ -164,12 +206,20 @@
     "pdfProtected": "The PDF is password-protected and cannot be processed without unlocking it first",
     "pdfDamaged": "The PDF appears to be damaged or unreadable",
     "imageInvalid": "Invalid image",
-    "watermarkImageNotProvided": "You must provide either text or an image for the watermark"
+    "watermarkImageNotProvided": "You must provide either text or an image for the watermark",
+    "unknown": "The file could not be processed.",
+    "invalidConfig": "The configuration is invalid. Check the values.",
+    "textNotEncodable": "The text contains unsupported characters (emoji or non-Latin scripts).",
+    "tooManyLines": "The text has too many lines (maximum 3).",
+    "batchTooManySteps": "The batch is too large: reduce the number of files or names."
   },
   "footer": {
     "tagline": "Crafted with care. Your files are never uploaded to any server. Open source.",
     "linksAria": "Footer links",
     "privacy": "Privacy",
+    "changelog": "Changelog",
+    "changelogTitle": "What's new",
+    "changelogClose": "Close",
     "github": "GitHub",
     "githubAria": "View source code on GitHub"
   },
@@ -203,8 +253,8 @@
     "li4_7": "Heatmaps, session recordings or screen replays.",
     "h2_5": "5. Google Analytics and consent",
     "p5_1": "This page uses <strong>Google Analytics 4</strong> to understand how the tool is used and improve it: which pages are visited, which browsers are common, where traffic comes from. Only that way can we know whether the changes we make help anyone or whether some areas are broken.",
-    "p5_2": "The Google Analytics script is loaded as soon as you enter the page, but <strong>configured in «consent denied» mode by default</strong> following the <em>Google Consent Mode v2</em> standard. That means that, until you accept the banner, Google receives no identifiers, installs no persistent cookies and only emits minimal anonymous signals (called <em>cookieless pings</em>) that do not allow your activity to be reconstructed or linked to a previous visit. When you click «Accept», consent is updated to «granted» and from then on Google records the full visit with cookies and events. If you decline, the script is still there but sends nothing relevant.",
-    "p5_3": "This way of loading Google Analytics is the one Google itself recommends and the one that European regulators accept as a basis for site verification in Google Search Console and Consent Mode integrity to work without penalising those who say no.",
+    "p5_2": "The Google Analytics script is <strong>not downloaded until you accept the banner</strong>. The page starts with consent denied by default following the <em>Google Consent Mode v2</em> standard and, until you accept, there is no communication with Google at all: no script, no signal, no cookie. When you click «Accept», only analytics storage (<code>analytics_storage</code>) is granted, the script is injected and from then on Google records the visit with cookies and events. If you decline, nothing is ever loaded.",
+    "p5_3": "This conditional loading is the strictest reading of the GDPR and the AEPD guidelines: there is no communication with third parties before consent, not even the minimal anonymous signals (<em>cookieless pings</em>) emitted by the classic consent mode.",
     "p5_4": "If you accept, Google Analytics collects:",
     "li5_1": "Visits and page views (relative URL, without sensitive parameters).",
     "li5_2": "Approximate country, derived from your IP (the full IP is not stored).",

@@ -19,7 +19,7 @@ Esto la hace especialmente útil para documentación sensible: DNIs, contratos, 
 - **Modo lote para trazabilidad:** subes un PDF y un fichero `.txt`/`.csv` con nombres; la app genera un PDF por destinatario con su nombre como marca. Útil para auditar filtraciones: el nombre identifica el origen.
 - **Plantilla descargable** del fichero de nombres con una sola pulsación (`plantilla-marcas.txt`).
 - **Internacionalización ES + EN** con detección automática del idioma del navegador y selector manual en el header.
-- **Aplicación web instalable (PWA):** manifiesto, icono y service worker para funcionamiento offline tras la primera carga.
+- **Aplicación web instalable (PWA) y funcional sin conexión:** manifiesto e iconos para instalación en escritorio y móvil. El service worker precachea iconos, manifiesto y el worker de pdf.js, y guarda en runtime los assets hasheados de cada build (HTML network-first, assets cache-first), así que tras la primera carga la aplicación completa funciona offline; todo el procesamiento es siempre local.
 - **Formatos de entrada:** PDF, PNG, JPG/JPEG y WebP.
 - **Procesamiento por lotes:** hasta 50 archivos en una sola operación con configuración común.
 - **Selección de páginas en PDF:** elige qué páginas reciben la marca y deja el resto intactas.
@@ -49,7 +49,7 @@ Una barra inferior fija muestra el recuento de archivos y el botón «Aplicar y 
 
 ### Requisitos previos
 
-- Node.js 22 o superior (Astro 6 lo exige).
+- Node.js 20.3 o superior (mínimo que admite Astro 6; se recomienda Node 22, que es el que usa CI).
 - npm 10 o superior.
 
 ### Instalación
@@ -92,7 +92,7 @@ npm run preview
 | Procesamiento de imágenes | Canvas API (`OffscreenCanvas` cuando está disponible) |
 | Procesamiento de PDFs | pdf-lib 1.17.1 (escritura) + pdfjs-dist 5.x (renderizado de previews) |
 | Empaquetado de resultados | JSZip 3.x + file-saver 2.x |
-| PWA | Web App Manifest + Service Worker (cache-first para assets, network-first para HTML) |
+| PWA | Web App Manifest + Service Worker con offline real: precache de iconos/manifiesto/worker de pdf.js y cacheo en runtime de los assets hasheados (HTML network-first, assets cache-first) |
 | Tests unitarios | Vitest 3.x |
 | Tests end-to-end | Playwright 1.x (no se ejecutan en CI; ver sección «Tests E2E manualmente») |
 
@@ -106,43 +106,69 @@ Bundle de JavaScript inicial: menos de 200 KB. `pdfjs-dist` y `pdf-lib` se carga
 pdf-watermark/
 ├── src/
 │   ├── pages/
-│   │   ├── index.astro          # Página principal: hero, isla editor, footer
-│   │   └── privacidad.astro     # Política de privacidad (RGPD art. 13)
+│   │   ├── index.astro          # Página principal (ES): isla editor + footer
+│   │   ├── privacidad.astro     # Política de privacidad ES (RGPD art. 13)
+│   │   └── en/
+│   │       ├── index.astro      # Página principal (EN)
+│   │       └── privacy.astro    # Política de privacidad EN
+│   ├── layouts/
+│   │   ├── BaseLayout.astro     # Layout compartido: <head> SEO, scripts y estilos comunes
+│   │   ├── SiteHeader.astro     # Cabecera: marca, badge de privacidad y selector de idioma
+│   │   └── SiteFooter.astro     # Pie: privacidad, cookies, GitHub y X
 │   ├── components/
 │   │   ├── Editor.svelte        # Isla principal: orquesta todos los componentes
 │   │   ├── FileDropzone.svelte  # Zona de arrastre y selección de archivos
 │   │   ├── FileList.svelte      # Lista lateral de archivos con estado
-│   │   ├── WatermarkControls.svelte  # Panel de ajustes del watermark
+│   │   ├── WatermarkControls.svelte  # Panel de ajustes del watermark (texto/imagen/lote)
 │   │   ├── PreviewSlider.svelte # Divisor arrastrable antes/después
 │   │   ├── PageSelector.svelte  # Chips de selección de páginas para PDFs
 │   │   ├── ProgressBar.svelte   # Barra de progreso del procesamiento por lotes
-│   │   └── PrivacyBadge.svelte  # Mensaje permanente de procesamiento local
+│   │   ├── PrivacyBadge.svelte  # Mensaje permanente de procesamiento local
+│   │   ├── PrivacyContent.svelte # Contenido de la política de privacidad
+│   │   ├── HowItWorks.svelte    # Sección «Cómo funciona» con diagrama del flujo local
+│   │   ├── CookieBanner.svelte  # Banner de cookies con Consent Mode v2
+│   │   └── LanguageSwitcher.svelte # Selector de idioma ES/EN
+│   ├── i18n/
+│   │   ├── es.json / en.json    # Cadenas localizadas
+│   │   └── t.ts                 # Helper mínimo de traducción por clave
 │   ├── lib/
 │   │   ├── watermark/
 │   │   │   ├── types.ts         # Tipos compartidos: WatermarkConfig, FileItem…
 │   │   │   ├── patterns.ts      # Cálculo de posiciones por patrón (función pura)
 │   │   │   ├── image.ts         # Motor de watermark para imágenes (Canvas API)
-│   │   │   └── pdf.ts           # Motor de watermark para PDFs (pdf-lib)
+│   │   │   ├── pdf.ts           # Motor de watermark para PDFs (pdf-lib)
+│   │   │   ├── image-watermark.ts # Helpers puros para marcas de agua de tipo imagen
+│   │   │   └── preview-decision.ts # Decide si la vista previa renderiza marca u original
 │   │   ├── state/
 │   │   │   ├── editor.svelte.ts # Store reactivo global (EditorStore)
 │   │   │   └── validation.ts    # Validación de WatermarkConfig
+│   │   ├── ui/
+│   │   │   └── pointer-drag.ts  # Drag con pointer events sin fugas de listeners
+│   │   ├── batch.ts             # Modo lote: parseo, slugify y deduplicación de nombres
+│   │   ├── batch-template.ts    # Plantilla TXT del lote generada en cliente
+│   │   ├── analytics.ts         # Wrapper de GA4 (Consent Mode v2 + carga condicional)
 │   │   ├── zip.ts               # Empaquetado ZIP y descarga de resultados
 │   │   └── storage.ts           # Persistencia opcional en localStorage
 │   └── styles/
 │       └── global.css           # Tokens del tema neobrutalista
 ├── public/
+│   ├── js/                      # Scripts estáticos referenciados desde el HTML
+│   │   ├── gtag-init.js         # Consent Mode v2 + carga condicional de gtag.js (defer)
+│   │   ├── lang-redirect.js     # Redirect / → /en/ en primera visita (bloqueante)
+│   │   ├── lang-pref.js         # Guarda la preferencia de idioma según la ruta
+│   │   └── sw-register.js       # Registro del service worker (defer)
 │   ├── _headers                 # Cabeceras HTTP de seguridad (Cloudflare Pages)
 │   ├── pdf.worker.min.mjs       # Worker de pdfjs-dist servido desde el propio origen
-│   └── favicon.svg
+│   ├── sw.js                    # Service worker (offline: precache + cacheo en runtime)
+│   ├── manifest.webmanifest     # Manifiesto PWA
+│   └── *.png / favicon.ico      # Iconos, favicons y og-image
 ├── tests/
-│   ├── unit/
-│   │   ├── patterns.test.ts     # Tests de los cuatro patrones de posicionamiento
-│   │   └── config-validation.test.ts  # Tests de validación de WatermarkConfig
-│   └── e2e/
-│       ├── image-flow.spec.ts   # Flujo completo con imágenes
-│       ├── pdf-flow.spec.ts     # Flujo completo con PDFs multipágina
-│       └── batch-flow.spec.ts   # Procesamiento por lotes y descarga ZIP
-├── docs/                        # Documentación del proyecto
+│   ├── unit/                    # Tests unitarios con Vitest
+│   └── e2e/                     # Specs de Playwright + fixtures (manual, no en CI)
+├── nginx.conf                   # Despliegue self-hosted (junto a Dockerfile)
+├── netlify.toml                 # Build y cabeceras para Netlify
+├── vercel.json                  # Cabeceras y URLs limpias para Vercel
+├── Dockerfile
 ├── CHANGELOG.md
 ├── SECURITY.md
 └── package.json
@@ -155,9 +181,9 @@ pdf-watermark/
 | Comando | Descripción |
 |---|---|
 | `npm run dev` | Servidor de desarrollo en `http://localhost:4321` |
-| `npm run build` | Build de producción en `dist/` (genera 4 páginas: ES + EN) |
+| `npm run build` | Build de producción en `dist/` (genera 4 páginas: ES + EN) e inyecta en `dist/sw.js` la lista de assets a precachear para el offline |
 | `npm run preview` | Previsualización del build antes de desplegar |
-| `npm test` | Ejecuta los 161 tests unitarios con Vitest |
+| `npm test` | Ejecuta los 278 tests unitarios con Vitest |
 | `npm run test:watch` | Tests unitarios en modo observador |
 | `npm run test:e2e` | Tests end-to-end con Playwright (manual, no en CI) |
 | `npm run typecheck` | Comprobación de tipos con `astro check` |
@@ -175,9 +201,14 @@ npm run build && npm run test:e2e
 
 ## Despliegue
 
-El sitio se despliega como HTML estático en cualquier CDN o servidor web. La opción recomendada es Cloudflare Pages.
+El sitio se despliega como HTML estático en cualquier CDN o servidor web. El repositorio incluye la configuración lista para cuatro alternativas equivalentes:
 
-Consulta la guía detallada en [`docs/deployment.md`](docs/deployment.md), que incluye instrucciones paso a paso para Cloudflare Pages, Netlify, Vercel y despliegue self-hosted con Nginx.
+- **Cloudflare Pages:** cabeceras en `public/_headers`.
+- **Netlify:** build y cabeceras en `netlify.toml`.
+- **Vercel:** cabeceras y URLs limpias en `vercel.json`.
+- **Self-hosted con Nginx:** `Dockerfile` + `nginx.conf`.
+
+Las cabeceras de seguridad son idénticas en las cuatro plataformas; `tests/unit/security-headers.test.ts` lo verifica en CI para evitar deriva entre ellas.
 
 ---
 
@@ -186,8 +217,8 @@ Consulta la guía detallada en [`docs/deployment.md`](docs/deployment.md), que i
 Este proyecto aplica un modelo de privacidad estructural, no una promesa de política:
 
 - Sin backend, sin endpoints, sin subidas de archivos.
-- Google Analytics 4 solo se carga si el usuario acepta el banner de cookies (Consent Mode v2, default denied). Sin consentimiento, cero peticiones de terceros.
-- `Content-Security-Policy` estricta con `default-src 'self'`, sin `unsafe-inline` ni `unsafe-eval`.
+- Google Analytics 4 solo se carga si el usuario acepta el banner de cookies: el script de `googletagmanager.com` se inyecta dinámicamente tras el consentimiento (Consent Mode v2, todo denegado por defecto; al aceptar se concede únicamente `analytics_storage` —solo medición de visitas—). Sin consentimiento, cero peticiones de terceros: ni script, ni ping, ni cookie.
+- `Content-Security-Policy` estricta con `default-src 'self'`: `script-src` sin `unsafe-inline` (los dos únicos scripts inline, que Astro inyecta siempre para hidratar las islas, se autorizan por hash SHA-256); `style-src` sí permite `'unsafe-inline'` por los estilos que generan los componentes.
 - El worker de pdfjs-dist se sirve desde el propio origen, sin CDNs externos.
 - `localStorage` solo guarda la configuración del watermark (texto, números y colores), nunca los archivos.
 
@@ -203,4 +234,4 @@ MIT. Consulta el fichero [`LICENSE`](LICENSE) para el texto completo.
 
 ## Contribuir
 
-Si quieres proponer mejoras, corregir errores o añadir funcionalidades, consulta [`docs/contributing.md`](docs/contributing.md) para conocer la estructura del proyecto, cómo ejecutar los tests y las convenciones de código que sigue el equipo.
+Las contribuciones son bienvenidas: abre un issue o un pull request en GitHub. Antes de enviar, ejecuta `npm run typecheck` y `npm test`, y sigue las convenciones del código existente (componentes Svelte 5 con runas, textos localizados en `src/i18n/`, versiones exactas en `package.json`). Para reportar fallos de seguridad, usa los canales privados descritos en [`SECURITY.md`](SECURITY.md).

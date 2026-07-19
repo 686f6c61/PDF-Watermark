@@ -25,11 +25,20 @@
         event.preventDefault();
       }
     };
+    // Proteccion contra perdida: con archivos cargados (haya o no lote en
+    // curso), el navegador pide confirmacion antes de cerrar o recargar.
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (editor.files.length > 0) {
+        event.preventDefault();
+      }
+    };
     window.addEventListener("dragover", preventDefault);
     window.addEventListener("drop", preventDefault);
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("dragover", preventDefault);
       window.removeEventListener("drop", preventDefault);
+      window.removeEventListener("beforeunload", onBeforeUnload);
     };
   });
 
@@ -113,12 +122,14 @@
   </section>
 {:else}
   <section class="editor" aria-label={t("controls.ariaLabel", lang)}>
-    <FileList {lang} />
+    <div class="left-col">
+      <FileList {lang} />
+      {#if editor.activeFile?.type === "pdf"}
+        <PageSelector file={editor.activeFile} {lang} />
+      {/if}
+    </div>
     <div class="center-col">
       {#if editor.activeFile}
-        {#if editor.activeFile.type === "pdf"}
-          <PageSelector file={editor.activeFile} {lang} />
-        {/if}
         {#key editor.activeFile.id}
           <PreviewSlider file={editor.activeFile} {lang} />
         {/key}
@@ -136,6 +147,16 @@
       &middot; {totalSizeMb(editor.totalSizeBytes)} MB
     </div>
     <ProgressBar {lang} />
+    {#if editor.isProcessing}
+      <button
+        class="brut-btn cancel-btn"
+        type="button"
+        onclick={() => editor.cancel()}
+        disabled={editor.isCancelling}
+      >
+        {editor.isCancelling ? t("action.cancelling", lang) : t("action.cancel", lang)}
+      </button>
+    {/if}
     <button
       class="brut-btn-primary"
       type="button"
@@ -146,8 +167,8 @@
     </button>
   </footer>
 
-  {#if editor.fatalError}
-    <div class="fatal" role="alert" aria-live="polite">{editor.fatalError}</div>
+  {#if editor.fatalErrorCode}
+    <div class="fatal" role="alert" aria-live="polite">{t("errors." + editor.fatalErrorCode, lang)}</div>
   {/if}
 {/if}
 
@@ -191,6 +212,18 @@
     gap: var(--space-3);
     min-width: 0;
   }
+  /* Columna izquierda: lista de archivos y, debajo, el selector de paginas.
+     Antes el selector iba sobre la preview y la empujaba hacia abajo al
+     aparecer; aqui la preview mantiene siempre su sitio. Ancho fijo igual
+     al de .file-list: sin el, la fila de chips del selector haria crecer la
+     columna y comprimiria la preview (flex-shrink: 0). */
+  .left-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    flex-shrink: 0;
+    width: 320px;
+  }
   .empty-preview {
     flex: 1;
     background: var(--surface);
@@ -224,5 +257,33 @@
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-md);
     font-weight: 600;
+  }
+
+  /* Tablet y movil: el layout de 3 columnas fijas pasa a una sola columna.
+     El breakpoint es 1023px para no tocar NADA del desktop (>= 1024px). */
+  @media (max-width: 1023px) {
+    .editor {
+      flex-direction: column;
+    }
+    .left-col {
+      width: 100%;
+    }
+    .action-bar {
+      flex-wrap: wrap;
+      gap: var(--space-3);
+    }
+  }
+
+  @media (max-width: 639px) {
+    .editor {
+      padding: var(--space-3);
+    }
+    .action-bar {
+      padding: var(--space-3) var(--space-4);
+    }
+    .action-bar .brut-btn-primary,
+    .action-bar .cancel-btn {
+      width: 100%;
+    }
   }
 </style>

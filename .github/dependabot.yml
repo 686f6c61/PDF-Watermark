@@ -1,0 +1,36 @@
+# Dependabot: actualizaciones semanales agrupadas para limitar ruido de PRs.
+# El proyecto fija versiones exactas en package.json; dependabot mantiene ese
+# estilo al actualizar manifiesto y lockfile a la vez.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # Framework y renderer: se actualizan juntos porque astro y
+      # @astrojs/svelte van acoplados (peerDependencies).
+      astro-svelte:
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+          - "svelte"
+      # Dev-deps de testing: vitest, playwright, jsdom y tipos.
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "playwright"
+          - "@playwright/*"
+          - "jsdom"
+          - "@types/*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -1,7 +1,7 @@
 {
   "meta": {
     "indexTitle": "PDF Watermark · Marcas de agua para PDFs e imágenes 100 % en tu navegador",
-    "indexDescription": "Protege tus PDFs e imágenes con marcas de agua personalizables. Procesamiento 100 % en tu navegador, tus archivos no se suben a ningún servidor. Cuatro patrones, lote, vista previa antes y después.",
+    "indexDescription": "Protege tus PDFs e imágenes con marcas de agua de texto o imagen, personalizables. Procesamiento 100 % en tu navegador, tus archivos no se suben a ningún servidor. Cuatro patrones, lote, vista previa antes y después.",
     "indexKeywords": "marcas de agua, watermark, PDF, imágenes, privacidad, navegador, sin servidor, RGPD, neobrutalismo",
     "ogTitle": "PDF Watermark · Marcas de agua 100 % en tu navegador",
     "ogDescription": "Protege tus PDFs e imágenes con marcas de agua personalizables. Procesamiento 100 % local, tus archivos no se suben a ningún servidor.",
@@ -22,7 +22,7 @@
   },
   "hero": {
     "title": "Protege tus PDFs e imágenes con marcas de agua",
-    "lead": "Todo el procesamiento ocurre en tu navegador. Tus archivos nunca se suben a ningún servidor.",
+    "lead": "Usa un texto o tu propia imagen (por ejemplo, tu logo) como marca. Todo el procesamiento ocurre en tu navegador: tus archivos nunca se suben a ningún servidor.",
     "screenAria": "Pantalla de bienvenida"
   },
   "dropzone": {
@@ -30,7 +30,8 @@
     "title": "Arrastra tus archivos aquí",
     "subtitle": "O pulsa para seleccionarlos desde el explorador",
     "formats": "PDF, PNG, JPG, JPEG, WebP · hasta 200 MB · máx. 50 archivos",
-    "addMore": "Añadir más"
+    "addMore": "Añadir más",
+    "dismissError": "Cerrar aviso"
   },
   "howItWorks": {
     "title": "Cómo funciona",
@@ -43,12 +44,16 @@
     "promisesAria": "Lo que no hacemos",
     "promise1Title": "Sin subida a un servidor",
     "promise1Body": "Ni el nuestro ni el de nadie. Tu archivo se queda donde está.",
-    "promise2Title": "Tu contenido no se mide. Solo medimos visitas si aceptas.",
-    "promise2Body": "Las analíticas se cargan únicamente con tu consentimiento explícito. Tus archivos siguen siendo invisibles para nosotros.",
+    "promise2Title": "Tu contenido no se mide",
+    "promise2Body": "Solo medimos visitas si aceptas. Las analíticas se cargan únicamente con tu consentimiento explícito. Tus archivos siguen siendo invisibles para nosotros.",
     "promise3Title": "No vemos tu contenido",
     "promise3Body": "Nunca sabemos qué archivo subes ni qué hay dentro. Imposible.",
     "promise4Title": "Funciona sin conexión",
-    "promise4Body": "Una vez cargada la página, puedes desconectar Internet. La marca de agua se aplica igual."
+    "promise4Body": "Una vez cargada la página, puedes desconectar Internet. La marca de agua se aplica igual.",
+    "promise5Title": "Tus archivos, solo en memoria",
+    "promise5Body": "Se procesan en la memoria del navegador y se descargan directamente. Ni caché, ni almacenamiento local, ni historial.",
+    "promise6Title": "Código abierto",
+    "promise6Body": "Todo el código es público en GitHub: puedes revisar exactamente qué hace la página antes de confiarle tus documentos."
   },
   "privacyBadge": {
     "ariaLabel": "Procesamiento 100 % local. Tus archivos no salen del navegador.",
@@ -72,7 +77,9 @@
     "statusPending": "Pendiente",
     "statusProcessing": "Procesando",
     "statusDone": "Listo",
-    "statusError": "Error"
+    "statusError": "Error",
+    "removeAll": "Quitar todo",
+    "confirmRemoveAll": "¿Quitar todos los archivos de la lista? Esta acción no se puede deshacer."
   },
   "controls": {
     "ariaLabel": "Configuración de la marca de agua",
@@ -82,6 +89,9 @@
     "modeBatch": "Lote",
     "modeAriaLabel": "Tipo de marca de agua",
     "imageUpload": "Subir imagen (PNG o WebP, máx. 2 MB)",
+    "imageChoose": "Seleccionar archivo",
+    "imageNone": "Ningún archivo seleccionado",
+    "imageLoaded": "Imagen cargada",
     "imageRemove": "Eliminar imagen",
     "imagePreviewAlt": "Previsualización de la marca de imagen",
     "imageHint": "Usa PNG con transparencia para mejor resultado.",
@@ -94,9 +104,14 @@
     "fontSerif": "Serif",
     "fontMono": "Mono",
     "size": "Tamaño",
+    "imageSize": "Tamaño de la imagen",
+    "relativeSize": "Proporcional al lienzo",
+    "relativeSizeHint": "El tamaño se adapta al ancho de cada página o imagen.",
+    "textVariablesHint": "Variables: {fecha}, {nombre}, {pagina}, {total}",
     "color": "Color",
     "opacity": "Opacidad",
     "rotation": "Rotación",
+    "rotationIgnoredSpiral": "La espiral rota cada marca automáticamente.",
     "resetRotation": "Reset 0°",
     "patternLegend": "Patrón",
     "patternAria": "Patrón de distribución",
@@ -107,7 +122,18 @@
     "density": "Densidad",
     "clearStorage": "Borrar configuración guardada",
     "resetCustomPosition": "Reset al centro",
-    "resetCustomPositionHint": "Marca colocada manualmente"
+    "resetCustomPositionHint": "Marca colocada manualmente",
+    "reset": "Restablecer",
+    "positionLegend": "Posición",
+    "posTopLeft": "Arriba a la izquierda",
+    "posTopCenter": "Arriba al centro",
+    "posTopRight": "Arriba a la derecha",
+    "posMiddleLeft": "Centro a la izquierda",
+    "posCenter": "Centro",
+    "posMiddleRight": "Centro a la derecha",
+    "posBottomLeft": "Abajo a la izquierda",
+    "posBottomCenter": "Abajo al centro",
+    "posBottomRight": "Abajo a la derecha"
   },
   "batch": {
     "title": "Marcas personalizadas en lote",
@@ -123,6 +149,13 @@
     "errorNoFiles": "Sube al menos un PDF o imagen para usar el lote",
     "counter": "{count}/50 nombres",
     "processing": "Procesando {current} de {total}"
+  },
+  "presets": {
+    "legend": "Presets",
+    "namePlaceholder": "Nombre del preset",
+    "save": "Guardar",
+    "apply": "Aplicar",
+    "delete": "Borrar"
   },
   "preview": {
     "ariaLabel": "Vista previa del archivo activo",
@@ -143,7 +176,12 @@
     "viewPage": "Ver página",
     "viewCurrent": ", vista actual",
     "markPage": "Marcar página",
-    "unmarkPage": "Desmarcar página"
+    "unmarkPage": "Desmarcar página",
+    "rangeAria": "Rango de páginas",
+    "applyRange": "Aplicar",
+    "selectAll": "Todas",
+    "selectNone": "Ninguna",
+    "invalidRange": "Rango no válido. Usa números entre 1 y el total de páginas, con el formato 1, 3-5, 8-."
   },
   "actions": {
     "applyDownload": "Aplicar y descargar",
@@ -152,6 +190,10 @@
     "filesPlural": "archivos",
     "processing": "Procesando",
     "ready": "Listo"
+  },
+  "action": {
+    "cancel": "Cancelar",
+    "cancelling": "Cancelando…"
   },
   "errors": {
     "noPreview": "Selecciona un archivo de la lista",
@@ -164,12 +206,20 @@
     "pdfProtected": "El PDF está protegido por contraseña y no puede procesarse sin desbloquearlo primero",
     "pdfDamaged": "El PDF parece dañado o ilegible",
     "imageInvalid": "Imagen no válida",
-    "watermarkImageNotProvided": "Debes proporcionar texto o una imagen para la marca de agua"
+    "watermarkImageNotProvided": "Debes proporcionar texto o una imagen para la marca de agua",
+    "unknown": "No se pudo procesar el archivo.",
+    "invalidConfig": "La configuración no es válida. Revisa los valores.",
+    "textNotEncodable": "El texto contiene caracteres no soportados (emoji o alfabetos no latinos).",
+    "tooManyLines": "El texto tiene demasiadas líneas (máximo 3).",
+    "batchTooManySteps": "El lote es demasiado grande: reduce el número de archivos o de nombres."
   },
   "footer": {
     "tagline": "Hecho con cuidado. Tus archivos no se suben a ningún servidor. Código abierto.",
     "linksAria": "Enlaces del pie de página",
     "privacy": "Privacidad",
+    "changelog": "Changelog",
+    "changelogTitle": "Novedades de la versión",
+    "changelogClose": "Cerrar",
     "github": "GitHub",
     "githubAria": "Ver el código fuente en GitHub"
   },
@@ -203,8 +253,8 @@
     "li4_7": "Mapas de calor, grabaciones de sesión o reproducciones de pantalla.",
     "h2_5": "5. Google Analytics y consentimiento",
     "p5_1": "Esta página utiliza <strong>Google Analytics 4</strong> para entender cómo se usa la herramienta y poder mejorarla: qué páginas se visitan, qué navegadores son comunes, desde qué países llega el tráfico. Solo así podemos saber si los cambios que hacemos sirven a alguien o si hay zonas rotas.",
-    "p5_2": "El script de Google Analytics se carga en cuanto entras en la página, pero <strong>configurado en modo «consentimiento denegado» por defecto</strong> siguiendo el estándar <em>Google Consent Mode v2</em>. Eso significa que, mientras no aceptes el banner, Google no recibe identificadores, no instala cookies persistentes y solo emite señales anónimas mínimas (los llamados <em>cookieless pings</em>) que no permiten reconstruir tu actividad ni vincularte a una visita anterior. Cuando pulsas «Aceptar», se actualiza el consentimiento a «concedido» y a partir de ahí Google registra la visita completa con cookies y eventos. Si rechazas, el script sigue ahí pero no manda nada relevante.",
-    "p5_3": "Esta forma de cargar Google Analytics es la que recomienda el propio Google y la que cumplen los reguladores europeos como base para que la verificación del sitio en Google Search Console y la integridad del Consent Mode funcionen sin penalizar a quien dice que no.",
+    "p5_2": "El script de Google Analytics <strong>no se descarga hasta que aceptas el banner</strong>. La página arranca con el consentimiento denegado por defecto siguiendo el estándar <em>Google Consent Mode v2</em> y, mientras no aceptes, no hay ninguna comunicación con Google: ni script, ni señal, ni cookie. Cuando pulsas «Aceptar», se concede únicamente el almacenamiento de analítica (<code>analytics_storage</code>), se inyecta el script y a partir de ahí Google registra la visita con cookies y eventos. Si rechazas, no se carga nunca nada.",
+    "p5_3": "Esta carga condicional es la interpretación más estricta del RGPD y de las directrices de la AEPD: no existe ninguna comunicación con terceros antes del consentimiento, ni siquiera las señales anónimas mínimas (<em>cookieless pings</em>) que emite el modo de consentimiento clásico.",
     "p5_4": "Si aceptas, Google Analytics recoge:",
     "li5_1": "Visitas y páginas vistas (URL relativa, sin parámetros sensibles).",
     "li5_2": "País aproximado, derivado de tu IP (la IP completa no se almacena).",

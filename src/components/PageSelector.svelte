@@ -1,5 +1,6 @@
 <script lang="ts">
   import { editor } from "../lib/state/editor.svelte";
+  import { parsePageRanges } from "../lib/page-ranges";
   import type { FileItem } from "../lib/watermark/types";
   import { t, type Lang } from "../i18n/t";
 
@@ -42,6 +43,39 @@
   const pages = $derived(
     file.pageCount ? Array.from({ length: file.pageCount }, (_, i) => i + 1) : [],
   );
+
+  // Seleccion por rangos escritos ("1, 3-5, 8-"): util en PDFs de cientos de
+  // paginas donde los chips no escalan. El parseo es todo-o-nada: cualquier
+  // valor fuera de rango o sintaxis rara muestra el aviso y no toca nada.
+  let rangeInput = $state("");
+  let rangeError = $state(false);
+
+  function applyRange() {
+    const parsed = parsePageRanges(rangeInput, file.pageCount ?? 0);
+    if (!parsed || parsed.length === 0) {
+      rangeError = true;
+      return;
+    }
+    rangeError = false;
+    editor.setSelectedPages(file.id, parsed);
+  }
+
+  function onRangeKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyRange();
+    }
+  }
+
+  function selectAll() {
+    rangeError = false;
+    editor.setSelectedPages(file.id, pages);
+  }
+
+  function selectNone() {
+    rangeError = false;
+    editor.setSelectedPages(file.id, []);
+  }
 </script>
 
 <div class="selector" role="group" aria-label={t("pageSelector.groupAria", lang)}>
@@ -76,6 +110,45 @@
       </div>
     {/each}
   </div>
+  <div class="range-row">
+    <input
+      class="brut-input range-input"
+      type="text"
+      placeholder="1, 3-5, 8-"
+      aria-label={t("pageSelector.rangeAria", lang)}
+      bind:value={rangeInput}
+      oninput={() => (rangeError = false)}
+      onkeydown={onRangeKeydown}
+      disabled={editor.isProcessing}
+    />
+    <button
+      type="button"
+      class="brut-btn small"
+      onclick={applyRange}
+      disabled={editor.isProcessing}
+    >
+      {t("pageSelector.applyRange", lang)}
+    </button>
+    <button
+      type="button"
+      class="brut-btn small"
+      onclick={selectAll}
+      disabled={editor.isProcessing}
+    >
+      {t("pageSelector.selectAll", lang)}
+    </button>
+    <button
+      type="button"
+      class="brut-btn small"
+      onclick={selectNone}
+      disabled={editor.isProcessing}
+    >
+      {t("pageSelector.selectNone", lang)}
+    </button>
+  </div>
+  {#if rangeError}
+    <p class="invalid-msg" role="alert">{t("pageSelector.invalidRange", lang)}</p>
+  {/if}
 </div>
 
 <style>
@@ -98,6 +171,35 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-1);
+    /* Scroll propio para PDFs de cientos de paginas: la fila de chips no
+       debe hacer crecer el panel entero. */
+    max-height: 168px;
+    overflow-y: auto;
+  }
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    flex-basis: 100%;
+  }
+  .range-input {
+    width: 160px;
+    padding: var(--space-1) var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    border-radius: var(--radius-sm);
+  }
+  .small {
+    font-size: var(--text-small);
+    padding: var(--space-1) var(--space-3);
+  }
+  .invalid-msg {
+    margin: 0;
+    flex-basis: 100%;
+    color: var(--danger-text);
+    font-weight: 700;
+    font-size: var(--text-small);
   }
   .chip {
     display: inline-flex;

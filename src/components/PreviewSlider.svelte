@@ -2,7 +2,8 @@
   import { onDestroy } from "svelte";
   import { editor } from "../lib/state/editor.svelte";
   import { createPointerDrag, type PointerDragHandle } from "../lib/ui/pointer-drag";
-  import type { FileItem } from "../lib/watermark/types";
+  import type { FileItem, WatermarkConfig } from "../lib/watermark/types";
+  import { applyTextVariables } from "../lib/watermark/text-variables";
   import { shouldRenderWatermark } from "../lib/watermark/preview-decision";
   import { t, type Lang } from "../i18n/t";
 
@@ -33,6 +34,24 @@
 
   let pdfjsModule: typeof import("pdfjs-dist") | null = null;
 
+  // Config efectiva para el preview: resuelve las variables de nivel archivo
+  // ({fecha}, {nombre}) igual que hace el store al procesar (ver el helper
+  // privado resolveFileLevelVariables de editor.svelte.ts), para que el
+  // preview no muestre los placeholders literales. {pagina}/{total} las
+  // resuelve el motor en el bucle de paginas.
+  function effectiveConfig(): WatermarkConfig {
+    const name = file.file.name;
+    const dot = name.lastIndexOf(".");
+    const nombre = dot <= 0 ? name : name.slice(0, dot);
+    return {
+      ...editor.config,
+      text: applyTextVariables(editor.config.text, {
+        fecha: new Date().toLocaleDateString("es-ES"),
+        nombre,
+      }),
+    };
+  }
+
   async function loadPdfjs() {
     if (pdfjsModule) return pdfjsModule;
     const mod = await import("pdfjs-dist");
@@ -50,7 +69,7 @@
     const img = new Image();
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
-      img.onerror = () => reject(new Error("Imagen invalida"));
+      img.onerror = () => reject(new Error(t("errors.imageInvalid", lang)));
       img.src = url;
     });
     if (token !== renderToken) return;
@@ -69,13 +88,13 @@
 
     const { applyWatermarkToImage } = await import("../lib/watermark/image");
     if (token !== renderToken) return;
-    const blob = await applyWatermarkToImage(file.file, editor.config);
+    const blob = await applyWatermarkToImage(file.file, effectiveConfig());
     const wmImg = new Image();
     const wmUrl = URL.createObjectURL(blob);
     try {
       await new Promise<void>((resolve, reject) => {
         wmImg.onload = () => resolve();
-        wmImg.onerror = () => reject(new Error("Render invalido"));
+        wmImg.onerror = () => reject(new Error(t("preview.previewError", lang)));
         wmImg.src = wmUrl;
       });
       if (token !== renderToken) return;
@@ -91,46 +110,57 @@
     const pdfjs = await loadPdfjs();
     if (token !== renderToken) return;
     const buffer = await file.file.arrayBuffer();
-    const originalDoc = await pdfjs.getDocument({
+    // pdf.js mantiene cada documento vivo en el worker hasta destruirlo
+    // explicitamente. Con el debounce del render, no hacerlo acumula
+    // decenas de documentos abiertos al escribir el texto de la marca.
+    const originalTask = pdfjs.getDocument({
       data: buffer.slice(0),
       isEvalSupported: false,
-    }).promise;
-    if (token !== renderToken) return;
-    const page = await originalDoc.getPage(currentPage);
-    const viewport = page.getViewport({ scale: 1.4 });
-    originalCanvas.width = viewport.width;
-    originalCanvas.height = viewport.height;
-    watermarkedCanvas.width = viewport.width;
-    watermarkedCanvas.height = viewport.height;
-    await page.render({
-      canvasContext: originalCanvas.getContext("2d")!,
-      canvas: originalCanvas,
-      viewport,
-    }).promise;
-    if (token !== renderToken) return;
+    });
+    let wmTask: ReturnType<typeof pdfjs.getDocument> | null = null;
+    try {
+      const originalDoc = await originalTask.promise;
+      if (token !== renderToken) return;
+      const page = await originalDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale: 1.4 });
+      originalCanvas.width = viewport.width;
+      originalCanvas.height = viewport.height;
+      watermarkedCanvas.width = viewport.width;
+      watermarkedCanvas.height = viewport.height;
+      await page.render({
+        canvasContext: originalCanvas.getContext("2d")!,
+        canvas: originalCanvas,
+        viewport,
+      }).promise;
+      if (token !== renderToken) return;
 
-    if (!shouldRenderWatermark(file, currentPage)) {
-      paintSkippedNotice(watermarkedCanvas, originalCanvas);
-      return;
+      if (!shouldRenderWatermark(file, currentPage)) {
+        paintSkippedNotice(watermarkedCanvas, originalCanvas);
+        return;
+      }
+
+      const { applyWatermarkToPdf } = await import("../lib/watermark/pdf");
+      const wmBlob = await applyWatermarkToPdf(file.file, effectiveConfig(), [currentPage]);
+      if (token !== renderToken) return;
+      const wmBuffer = await wmBlob.arrayBuffer();
+      wmTask = pdfjs.getDocument({
+        data: wmBuffer,
+        isEvalSupported: false,
+      });
+      const wmDoc = await wmTask.promise;
+      const wmPage = await wmDoc.getPage(currentPage);
+      const wmViewport = wmPage.getViewport({ scale: 1.4 });
+      watermarkedCanvas.width = wmViewport.width;
+      watermarkedCanvas.height = wmViewport.height;
+      await wmPage.render({
+        canvasContext: watermarkedCanvas.getContext("2d")!,
+        canvas: watermarkedCanvas,
+        viewport: wmViewport,
+      }).promise;
+    } finally {
+      void originalTask.destroy();
+      void wmTask?.destroy();
     }
-
-    const { applyWatermarkToPdf } = await import("../lib/watermark/pdf");
-    const wmBlob = await applyWatermarkToPdf(file.file, editor.config, [currentPage]);
-    if (token !== renderToken) return;
-    const wmBuffer = await wmBlob.arrayBuffer();
-    const wmDoc = await pdfjs.getDocument({
-      data: wmBuffer,
-      isEvalSupported: false,
-    }).promise;
-    const wmPage = await wmDoc.getPage(currentPage);
-    const wmViewport = wmPage.getViewport({ scale: 1.4 });
-    watermarkedCanvas.width = wmViewport.width;
-    watermarkedCanvas.height = wmViewport.height;
-    await wmPage.render({
-      canvasContext: watermarkedCanvas.getContext("2d")!,
-      canvas: watermarkedCanvas,
-      viewport: wmViewport,
-    }).promise;
   }
 
   function paintSkippedNotice(target: HTMLCanvasElement, source: HTMLCanvasElement) {
@@ -203,6 +233,8 @@
     void editor.config.pattern;
     void editor.config.density;
     void editor.config.fontFamily;
+    void editor.config.relativeSize;
+    void editor.config.imageScale;
     void editor.config.customPosition;
     void editor.config.imageDataUrl;
     scheduleRender();
@@ -435,6 +467,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  /* Por debajo de 1024px el frame no necesita tanto alto minimo. */
+  @media (max-width: 1023px) {
+    .frame {
+      min-height: 320px;
+    }
   }
   .layer {
     position: absolute;

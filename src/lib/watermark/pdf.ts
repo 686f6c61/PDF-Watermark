@@ -20,13 +20,25 @@
  * @module watermark/pdf
  */
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage } from "pdf-lib";
-import { computePositions, getRenderText } from "./patterns";
 import {
-  computeImageWatermarkSize,
+  computePositions,
+  getRenderText,
+  resolveEffectiveFontSize,
+  TEXT_LINE_HEIGHT,
+} from "./patterns";
+import { applyTextVariables } from "./text-variables";
+import {
+  computeImageWatermarkSizeFromScale,
   hasImageWatermark,
   hasTextWatermark,
+  imageMaxFractionForPattern,
 } from "./image-watermark";
-import { WatermarkError, type FontFamily, type WatermarkConfig } from "./types";
+import {
+  LIMITS,
+  WatermarkError,
+  type FontFamily,
+  type WatermarkConfig,
+} from "./types";
 
 const FONT_BY_FAMILY: Record<FontFamily, StandardFonts> = {
   sans: StandardFonts.Helvetica,
@@ -205,15 +217,25 @@ export async function applyWatermarkToPdf(
     if (!targetPages.has(pageNumber)) continue;
     const page = pages[i]!;
     const { width, height } = page.getSize();
-    const positions = computePositions(width, height, config);
-    // Caso 1: marca de imagen. Calculamos el tamaño una sola vez por pagina.
+    // Tamaño efectivo para ESTA pagina: con relativeSize el fontSize del
+    // usuario se escala proporcionalmente al ancho del lienzo, de modo que un
+    // lote mixto A4/A3 quede proporcionado. La config persistida no cambia.
+    const effectiveFontSize = resolveEffectiveFontSize(config, width);
+    const effectiveConfig: WatermarkConfig = { ...config, fontSize: effectiveFontSize };
+    // Caso 1: marca de imagen. Calculamos el tamaño una sola vez por pagina,
+    // limitado al lienzo, y lo pasamos al patron para espaciar/anclar con el
+    // tamaño real (el texto esta vacio en este modo y la estimacion colapsa).
     if (watermarkImage) {
-      const draw = computeImageWatermarkSize({
+      const draw = computeImageWatermarkSizeFromScale({
         naturalWidth: watermarkImage.width,
         naturalHeight: watermarkImage.height,
-        fontSize: config.fontSize,
+        imageScale: config.imageScale ?? LIMITS.DEFAULT_IMAGE_SCALE,
+        canvasWidth: width,
+        canvasHeight: height,
+        maxFraction: imageMaxFractionForPattern(config.pattern),
       });
       if (draw.width <= 0 || draw.height <= 0) continue;
+      const positions = computePositions(width, height, effectiveConfig, draw);
       for (const pos of positions) {
         // pdf-lib dibuja desde la esquina inferior-izquierda y rota desde ese
         // mismo punto. Para centrar visualmente la imagen sobre (pos.x, pos.y)
@@ -234,26 +256,48 @@ export async function applyWatermarkToPdf(
     }
     // Caso 2: marca de texto (codigo original).
     if (!font) continue;
-    const renderText = getRenderText(config.text);
-    const textWidth = font.widthOfTextAtSize(renderText, config.fontSize);
+    const positions = computePositions(width, height, effectiveConfig);
+    // Variables de nivel pagina ({pagina}, {total}) sobre el texto ya
+    // sustituido a nivel archivo por el store ({fecha}, {nombre}). Las de
+    // nivel archivo que lleguen sin sustituir (llamadas directas al motor)
+    // quedan literales, por contrato de applyTextVariables.
+    const pageText = applyTextVariables(config.text, {
+      pagina: String(pageNumber),
+      total: String(pages.length),
+    });
+    // Texto multi-linea: cada linea se dibuja centrada por separado, con la
+    // convencion del espacio final de getRenderText heredada por linea.
+    const renderLines = pageText.split("\n").map(getRenderText);
+    const lineWidths = renderLines.map((line) =>
+      font.widthOfTextAtSize(line, effectiveFontSize),
+    );
     for (const pos of positions) {
-      const { drawX, drawY } = computePdfDrawOffset({
-        canvasX: pos.x,
-        canvasY: pos.y,
-        textWidth,
-        pageHeight: height,
-        font,
-        fontSize: config.fontSize,
-      });
-      page.drawText(renderText, {
-        x: drawX,
-        y: drawY,
-        size: config.fontSize,
-        font,
-        color,
-        opacity: config.opacity,
-        rotate: degrees(-pos.rotation),
-      });
+      const angleRad = (pos.rotation * Math.PI) / 180;
+      for (let lineIndex = 0; lineIndex < renderLines.length; lineIndex += 1) {
+        // La linea i (0-based de n) se dibuja desplazada (i - (n-1)/2) *
+        // 1.2em respecto al centro, de modo que el BLOQUE queda centrado en
+        // la posicion. El desplazamiento se aplica en el marco rotado del
+        // texto (igual que en Canvas, donde translate+rotate preceden al
+        // fillText) para mantener la paridad preview <-> PDF.
+        const dy = (lineIndex - (renderLines.length - 1) / 2) * TEXT_LINE_HEIGHT * effectiveFontSize;
+        const { drawX, drawY } = computePdfDrawOffset({
+          canvasX: pos.x - dy * Math.sin(angleRad),
+          canvasY: pos.y + dy * Math.cos(angleRad),
+          textWidth: lineWidths[lineIndex]!,
+          pageHeight: height,
+          font,
+          fontSize: effectiveFontSize,
+        });
+        page.drawText(renderLines[lineIndex]!, {
+          x: drawX,
+          y: drawY,
+          size: effectiveFontSize,
+          font,
+          color,
+          opacity: config.opacity,
+          rotate: degrees(-pos.rotation),
+        });
+      }
     }
   }
 

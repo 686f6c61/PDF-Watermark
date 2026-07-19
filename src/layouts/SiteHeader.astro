@@ -1,0 +1,22 @@
+---
+import PrivacyBadge from "../components/PrivacyBadge.svelte";
+import LanguageSwitcher from "../components/LanguageSwitcher.svelte";
+import { t, type Lang } from "../i18n/t";
+
+interface Props {
+  lang: Lang;
+  /** Los index muestran el badge de procesamiento local; privacidad no. */
+  withPrivacyBadge?: boolean;
+}
+
+const { lang, withPrivacyBadge = false } = Astro.props;
+const homeHref = lang === "es" ? "/" : "/en/";
+---
+
+<header class="page-header">
+  <a class="brand" href={homeHref}>{t("header.brand", lang)}</a>
+  <div class="header-right">
+    {withPrivacyBadge && <PrivacyBadge {lang} />}
+    <LanguageSwitcher {lang} />
+  </div>
+</header>
