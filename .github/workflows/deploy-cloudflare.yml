@@ -38,7 +38,7 @@ jobs:
       # Variable de repositorio (no secret) necesaria:
       #   CLOUDFLARE_PROJECT_NAME — nombre del proyecto en Cloudflare Pages
       - name: Publicar en Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
