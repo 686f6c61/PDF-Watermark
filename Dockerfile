@@ -29,7 +29,7 @@ RUN npm run build
 # Imagen oficial nginx-unprivileged: ya corre como usuario `nginx` (uid 101),
 # escucha en 8080 por defecto y tiene PID/cache en directorios escribibles.
 # Evita los problemas tipicos de permisos en /run/nginx.pid del nginx estandar.
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runner
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runner
 
 # Necesario root momentaneamente para instalar wget (usado por HEALTHCHECK)
 # y copiar la configuracion y los assets.
