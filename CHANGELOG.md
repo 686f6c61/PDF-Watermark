@@ -7,8 +7,6 @@ El versionado sigue [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
-## [Unreleased]
-
 ## [1.3.0] - 2026-07-18
 
 ### Added
