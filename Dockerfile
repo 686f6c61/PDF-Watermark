@@ -1,6 +1,6 @@
 # Etapa 1: build
 # Compilamos el sitio estatico con Node 22 alpine (requerido por Astro 6+).
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
